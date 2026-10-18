@@ -37,9 +37,9 @@ def chat():
         if not GEMINI_API_KEY:
             return jsonify({"response": "Error: GEMINI_API_KEY Render-e set kora nei!"})
 
-        # gemini-2.5-flash মডেল ব্যবহার করা হচ্ছে
+        # gemini-3.8-flash মডেল ব্যবহার করা হচ্ছে
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
+            model_name="gemini-3.8-flash",
             system_instruction=SYSTEM_PROMPT
         )
 
