@@ -3,7 +3,7 @@ from flask import Flask, render_template, request, jsonify
 from google import genai
 from google.genai import types
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='.')
 
 # API Key ক্লাউড এনভায়রনমেন্ট (Render) থেকে নেওয়া হবে
 api_key = os.environ.get("GEMINI_API_KEY")
