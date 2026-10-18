@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, jsonify, render_template, request, session
 import google.generativeai as genai
 import os
 
@@ -20,10 +20,12 @@ SYSTEM_PROMPT = """
 ৩. ব্যবহারকারী যে ভাষায় প্রশ্ন করবেন (বাংলা, ইংরেজি বা হিন্দি), আপনাকে ঠিক সে ভাষাতেই বন্ধুসুলভভাবে স্পষ্ট ও দ্রুত উত্তর দিতে হবে।
 """
 
+
 @app.route("/")
 def home():
     session.clear()  # নতুন সেশনে নতুন চ্যাট শুরু
     return render_template("index.html")
+
 
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -38,15 +40,14 @@ def chat():
     history = session["chat_history"]
 
     try:
-        # দ্রুততম মডেল ব্যবহার করা হচ্ছে
+        # সঠিক নিয়মে মডেল ইনিশিয়ালাইজ করা হচ্ছে
         model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            system_instruction=SYSTEM_PROMPT
+            model_name="gemini-2.5-flash", system_instruction=SYSTEM_PROMPT
         )
-        
+
         # পূর্বে পাঠানো বার্তাগুলোর সমন্বয়ে চ্যাট সেশন চালু
         chat_session = model.start_chat(history=history)
-        
+
         # দ্রুত রেসপন্স জেনারেট করা
         response = chat_session.send_message(user_message)
         bot_response = response.text
@@ -61,7 +62,12 @@ def chat():
 
     except Exception as e:
         print("Error:", e)
-        return jsonify({"response": "দুঃখিত, সংযোগে সামান্য বিলম্ব হচ্ছে। অনুগ্রহ করে আবার চেষ্টা করুন।"})
+        return jsonify(
+            {
+                "response": "দুঃখিত, সংযোগে সামান্য বিলম্ব হচ্ছে। অনুগ্রহ করে আবার চেষ্টা করুন।"
+            }
+        )
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
