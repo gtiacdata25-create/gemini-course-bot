@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Training Course AI Advisor Dashboard</title>
+    <style>
+        :root {
+            --primary-color: #4f46e5;
+            --bg-color: #f3f4f6;
+            --card-bg: #ffffff;
+            --text-color: #1f2937;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .dashboard {
+            width: 90%;
+            max-width: 800px;
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            height: 85vh;
+        }
+        .header {
+            background: var(--primary-color);
+            color: white;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h2 { margin: 0; font-size: 1.5rem; }
+        
+        .language-selector {
+            display: flex;
+            gap: 10px;
+        }
+        .lang-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+        .lang-btn.active, .lang-btn:hover {
+            background: white;
+            color: var(--primary-color);
+        }
+
+        .chat-container {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            background: #fafafa;
+        }
+        .message {
+            max-width: 75%;
+            padding: 12px 16px;
+            border-radius: 10px;
+            line-height: 1.5;
+            word-wrap: break-word;
+        }
+        .user-message {
+            background: var(--primary-color);
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+        .ai-message {
+            background: #e5e7eb;
+            color: var(--text-color);
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+        }
+
+        .input-area {
+            display: flex;
+            padding: 15px;
+            background: white;
+            border-top: 1px solid #e5e7eb;
+        }
+        .input-area input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            outline: none;
+            font-size: 1rem;
+        }
+        .input-area button {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 0 20px;
+            margin-left: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+        .input-area button:hover { background: #4338ca; }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard">
+        <!-- ড্যাশবোর্ড হেডার এবং ভাষা নির্বাচন অপশন -->
+        <div class="header">
+            <h2>🎓 Course Advisor Dashboard</h2>
+            <div class="language-selector">
+                <button class="lang-btn active" onclick="setLanguage('Bengali', this)">বাংলা</button>
+                <button class="lang-btn" onclick="setLanguage('English', this)">English</button>
+                <button class="lang-btn" onclick="setLanguage('Hindi', this)">हिन्दी</button>
+            </div>
+        </div>
+
+        <!-- চ্যাট বক্স ডিসপ্লে -->
+        <div class="chat-container" id="chatContainer">
+            <div class="message ai-message">স্বাগতম! যেকোনো ট্রেনিং কোর্স সম্পর্কে জানতে উপরে ভাষা সিলেক্ট করে প্রশ্ন করুন।</div>
+        </div>
+
+        <!-- ইনপুট ফিল্ড -->
+        <div class="input-area">
+            <input type="text" id="userInput" placeholder="টাইপ করুন (যেমন: Python কোর্স সম্পর্কে জানতে চাই)..." onkeypress="handleKeyPress(event)">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let currentLanguage = 'Bengali';
+        let conversationHistory = []; // চ্যাট মেমোরি বা হিস্ট্রি রাখার জন্য এরে
+
+        function setLanguage(lang, btn) {
+            currentLanguage = lang;
+            document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            
+            const chatContainer = document.getElementById('chatContainer');
+            let welcomeText = "স্বাগতম! আপনি ট্রেনিং কোর্স সম্পর্কে কী জানতে চান তা লিখুন।";
+            if(lang === 'English') welcomeText = "Welcome! Ask me anything about training courses.";
+            if(lang === 'Hindi') welcomeText = "स्वागत है! आप ट्रेनिंग कोर्स के बारे में क्या जानना चाहते हैं पूछें।";
+            
+            chatContainer.innerHTML += `<div class="message ai-message">${welcomeText} (Language switched to ${lang})</div>`;
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const inputField = document.getElementById('userInput');
+            const message = inputField.value.trim();
+            if (!message) return;
+
+            const chatContainer = document.getElementById('chatContainer');
+            
+            // ইউজারের মেসেজ চ্যাটে যোগ করা এবং হিস্টরিতে সেভ করা
+            chatContainer.innerHTML += `<div class="message user-message">${message}</div>`;
+            conversationHistory.push({ sender: "user", text: message });
+            
+            inputField.value = '';
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            // লোডিং মেসেজ
+            const loadingId = 'loading-' + Date.now();
+            chatContainer.innerHTML += `<div class="message ai-message" id="${loadingId}">Thinking...</div>`;
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        message: message, 
+                        language: currentLanguage,
+                        history: conversationHistory // ব্যাকএন্ডে হিস্ট্রি পাঠানো হচ্ছে
+                    })
+                });
+                const data = await response.json();
+                
+                // লোডিং সরিয়ে উত্তর দেওয়া এবং AI-এর উত্তর হিস্টরিতে সেভ করা
+                document.getElementById(loadingId).remove();
+                chatContainer.innerHTML += `<div class="message ai-message">${data.reply}</div>`;
+                conversationHistory.push({ sender: "model", text: data.reply });
+
+            } catch (error) {
+                document.getElementById(loadingId).remove();
+                chatContainer.innerHTML += `<div class="message ai-message">Error connecting to server.</div>`;
+            }
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+    </script>
+</body>
+</html>
