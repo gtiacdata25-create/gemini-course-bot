@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Course Advisor Dashboard</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+        .dashboard-card { width: 100%; max-width: 750px; height: 85vh; background: #ffffff; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.08); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #e5e7eb; }
+        
+        /* Top Navigation Header */
+        .header { background: #5551FF; color: white; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+        .header-title { font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+        
+        /* Language Toggle Buttons */
+        .lang-group { display: flex; gap: 8px; }
+        .lang-btn { background: rgba(255, 255, 255, 0.2); color: white; border: none; padding: 6px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; transition: all 0.2s ease; }
+        .lang-btn:hover, .lang-btn.active { background: white; color: #5551FF; }
+
+        /* Chat Body */
+        .chat-area { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; background: #fafafa; }
+        .msg { padding: 12px 18px; border-radius: 12px; max-width: 85%; font-size: 1rem; line-height: 1.5; word-wrap: break-word; }
+        .msg-bot { background: #e0e7ff; color: #1e1b4b; align-self: flex-start; border-bottom-left-radius: 2px; }
+        .msg-user { background: #5551FF; color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
+        
+        /* Name Highlight Style */
+        .highlight-name { color: #5551FF; font-weight: 800; background: #ffffff; padding: 2px 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+        /* Bottom Input Form */
+        .input-area { padding: 16px; background: white; border-top: 1px solid #e5e7eb; display: flex; gap: 10px; }
+        .input-area input { flex: 1; padding: 12px 18px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 0.95rem; outline: none; }
+        .input-area input:focus { border-color: #5551FF; }
+        .input-area button { background: #5551FF; color: white; border: none; padding: 12px 24px; border-radius: 10px; font-weight: 700; cursor: pointer; transition: 0.2s; }
+        .input-area button:hover { background: #4338ca; }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-card">
+        <!-- Header with Language Selector Buttons -->
+        <div class="header">
+            <div class="header-title">🎓 Course Advisor Dashboard</div>
+            <div class="lang-group">
+                <button class="lang-btn active" id="btn-bn" onclick="selectLang('bn')">বাংলা</button>
+                <button class="lang-btn" id="btn-en" onclick="selectLang('en')">English</button>
+                <button class="lang-btn" id="btn-hi" onclick="selectLang('hi')">हिन्दी</button>
+            </div>
+        </div>
+
+        <!-- Chat Container -->
+        <div class="chat-area" id="chatArea"></div>
+
+        <!-- Input Bar -->
+        <div class="input-area">
+            <input type="text" id="userInput" placeholder="টাইপ করুন (যেমন: Python কোর্স সম্পর্কে জানতে চাই)..." onkeypress="if(event.key==='Enter') sendMsg()">
+            <button onclick="sendMsg()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        // Language specific welcome messages with highlighted Jayanta AI
+        const welcomeTexts = {
+            'bn': 'স্বাগতম! আমি <span class="highlight-name">জয়ন্ত AI</span>। যেকোনো ধরনের ট্রেনিং কোর্স সম্পর্কে জানতে আমাকে প্রশ্ন করুন।',
+            'en': 'Welcome! I am <span class="highlight-name">Jayanta AI</span>. Ask me any question to learn about any training course.',
+            'hi': 'स्वागत है! मैं <span class="highlight-name">जयंत AI</span> हूँ। किसी भी प्रकार के ट्रेनिंग कोर्स के बारे में जानने के लिए मुझसे प्रश्न पूछें।'
+        };
+
+        const placeholders = {
+            'bn': 'টাইপ করুন (যেমন: Python কোর্স সম্পর্কে জানতে চাই)...',
+            'en': 'Type here (e.g. I want to learn Python)...',
+            'hi': 'टाइप करें (जैसे: पाइथन कोर्स के बारे में जानना है)...'
+        };
+
+        // Initialize default view in Bangla
+        window.onload = function() {
+            selectLang('bn');
+        };
+
+        function selectLang(lang) {
+            // Update Active button style
+            document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`btn-${lang}`).classList.add('active');
+
+            // Update Placeholder text
+            document.getElementById('userInput').placeholder = placeholders[lang];
+
+            // Clear chat window and show new welcome message
+            const chatArea = document.getElementById('chatArea');
+            chatArea.innerHTML = '';
+            addMessage(welcomeTexts[lang], 'msg-bot');
+        }
+
+        function addMessage(htmlContent, className) {
+            const chatArea = document.getElementById('chatArea');
+            const div = document.createElement('div');
+            div.className = `msg ${className}`;
+            div.innerHTML = htmlContent;
+            chatArea.appendChild(div);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        async function sendMsg() {
+            const input = document.getElementById('userInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            addMessage(text, 'msg-user');
+            input.value = '';
+
+            try {
+                const res = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                });
+                const data = await res.json();
+                addMessage(data.response || data.reply || 'দুঃখিত, কোনো সমস্যা হয়েছে!', 'msg-bot');
+            } catch (err) {
+                addMessage('সার্ভার কানেকশনে সমস্যা হচ্ছে!', 'msg-bot');
+            }
+        }
+    </script>
+</body>
+</html>
