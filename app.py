@@ -11,12 +11,13 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 def search_web(query):
-    """অনলাইন থেকে রিয়েল-টাইম তথ্য ও রুট খুঁজে আনার ফাংশন"""
+    """Real-time live search function"""
     try:
         results = []
-        with DDGS() as ddgs:
-            # সার্চের মাধ্যমে সেরা ৩টি লাইভ ফলাফল আনবে
-            for r in ddgs.text(query, region='in-en', max_results=3):
+        ddgs = DDGS()
+        # Search live results
+        for r in ddgs.text(query, max_results=3):
+            if 'body' in r:
                 results.append(r['body'])
         return "\n".join(results)
     except Exception as e:
@@ -24,20 +25,12 @@ def search_web(query):
         return ""
 
 SYSTEM_PROMPT = """
-আপনি 'Jayanta AI' - একজন অত্যন্ত বুদ্ধিমান, বন্ধুত্বপূর্ণ এবং রিয়েল-টাইম তথ্য প্রদানকারী বহুভাষিক AI অ্যাসিস্ট্যান্ট।
+Apni 'Jayanta AI' - ekjon multilingual real-time AI assistant.
 
-আপনার মূল কাজ ও দায়িত্বসমূহ:
-১. **ভাষা নির্বাচন ও প্রতিক্রিয়া (Language Selection):** 
-   - ব্যবহারকারী যে ভাষায় প্রশ্ন করবেন (বাংলা, ইংরেজি বা হিন্দি), আপনাকে হুবহু সেই ভাষাতেই উত্তর দিতে হবে। 
-   - বাংলা প্রশ্ন হলে শুদ্ধ বাংলায়, ইংরেজি হলে পরিষ্কার ইংরেজিতে, এবং হিন্দি প্রশ্ন হলে হিন্দিতে উত্তর দেবেন।
-
-২. **লাইভ তথ্য প্রদান (Real-time Information):** 
-   - যেকোনো কোর্স, সিলেবাস বা কেরিয়ার সম্পর্কিত সঠিক ও আপডেট তথ্য দেওয়া।
-   - যেকোনো ইনস্টিটিউটের নাম, ঠিকানা এবং পৌঁছানোর স্পষ্ট রুট গাইড (বাস, ট্রেন, মেট্রো) প্রদান করা।
-
-৩. **প্রাকৃতিক কথোপকথন (Human-like Interaction):**
-   - রোবটের মতো কঠিন ভাষা ব্যবহার না করে সাধারণ মানুষের মতো সুন্দর, সহজ এবং বন্ধুত্বপূর্ণ ভঙ্গিতে কথা বলবেন।
-   - অনলাইন সার্চ থেকে পাওয়া বাস্তব তথ্যের ওপর ভিত্তি করে সঠিক উত্তর তৈরি করবেন, কোনো মনগড়া বা ভুল তথ্য দেবেন না।
+Niyomabali:
+1. User je bhashay (Bangla, English, Hindi) proshno korben, huba-hu sei bhashay-e uttor din.
+2. Interne-er live search data bebohar kore accurate Course info, Institute Address ebong Bus/Train/Metro Route guide din.
+3. Ekdom sahaj, sundor ebong manusher moton bandhubhabapurna conversation korun.
 """
 
 @app.route("/")
@@ -49,7 +42,7 @@ def home():
 def chat():
     user_message = request.json.get("message", "").strip()
     if not user_message:
-        return jsonify({"response": "অনুগ্রহ করে একটি প্রশ্ন লিখুন।"})
+        return jsonify({"response": "Anurogh kore ekti proshno likhun."})
 
     if "chat_history" not in session:
         session["chat_history"] = []
@@ -60,12 +53,12 @@ def chat():
         if not GROQ_API_KEY:
             return jsonify({"response": "Error: Render-e GROQ_API_KEY set kora nei!"})
 
-        # ১. ব্যাকগ্রাউন্ডে ইন্টারনেটে লাইভ সার্চ চালানো
+        # 1. Live Web Search
         search_results = search_web(user_message)
         
-        # ২. সার্চের তথ্য সহ প্রম্পট সাজানো
+        # 2. Context Prompt Setup
         if search_results:
-            context_message = f"User Question: {user_message}\n\nReal-time Search Data from Internet:\n{search_results}\n\n[Instruction: Answer the user in the exact same language they used (Bengali / English / Hindi) using the real-time search data above in a friendly human-like manner.]"
+            context_message = f"User Question: {user_message}\n\nReal-time Search Data:\n{search_results}\n\n[Instruction: Answer the user in their requested language (Bengali/English/Hindi) naturally based on the search data.]"
         else:
             context_message = user_message
 
@@ -74,17 +67,16 @@ def chat():
             messages.append(item)
         messages.append({"role": "user", "content": context_message})
 
-        # ৩. Groq LLM দিয়ে মানুষের মতো রেসপন্স তৈরি
+        # 3. Groq API Call
         completion = client.chat.completions.create(
             model="openai/gpt-oss-120b",
             messages=messages,
-            temperature=0.4,
+            temperature=0.3,
             max_tokens=1024
         )
 
         bot_response = completion.choices[0].message.content
 
-        # চ্যাট হিস্ট্রিতে ইউজার মেসেজ সেভ
         history.append({"role": "user", "content": user_message})
         history.append({"role": "assistant", "content": bot_response})
         session["chat_history"] = history
