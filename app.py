@@ -10,7 +10,7 @@ app.secret_key = "jayanta_ai_secret_key_clean_bot"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
-# Lightweight Live Search Tool without extra heavy libraries
+# Lightweight Live Search Tool
 def live_web_search(query):
     try:
         import requests
@@ -18,7 +18,7 @@ def live_web_search(query):
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         response = requests.get(url, headers=headers, timeout=5)
         if response.status_code == 200:
-            return response.text[:2000] # Pass raw text context safely
+            return response.text[:2000]
     except Exception:
         pass
     return "No search data"
@@ -27,13 +27,16 @@ SYSTEM_PROMPT = """
 আপনি 'Jayanta AI' - যেকোনো ইনস্টিটিউট ও লোকেশনের জন্য একটি রিয়েল-টাইম, গতিশীল এবং অতি-নির্ভুল গাইড।
 
 কঠোর নীতিমালা (Strict Rules):
-১. **ইনস্টিটিউট অনুসন্ধান:** ব্যবহারকারী পশ্চিমবঙ্গের যেকোনো ইনস্টিটিউট (যেমন: Global Technical Institute, Nabagram Vidyapith ইত্যাদি)-এর নাম বললে লাইভ সার্চ কনটেক্সট ব্যবহার করে তার সঠিক অবস্থান (যেমন: ফুলবাগান, কলকাতা / কোননগর, হুগলি) চিহ্নিত করুন।
+১. **ইনস্টিটিউট অনুসন্ধান:** ব্যবহারকারী পশ্চিমবঙ্গের যেকোনো ইনস্টিটিউট (যেমন: Global Technical Institute ইত্যাদি)-এর নাম বললে লাইভ সার্চ কনটেক্সট ব্যবহার করে তার সঠিক অবস্থান (যেমন: হরামোহন ঘোষ লেন, ফুলবাগান, কলকাতা) চিহ্নিত করুন।
 ২. **জিও-ফেনসিং (Geo-Fencing):** ইনস্টিটিউটের সমস্ত তথ্য কেবল ভারতের পশ্চিমবঙ্গের (Kolkata, Howrah, Hooghly, etc.) সীমানার ভেতরে হতে হবে।
-৩. **আসল ট্রানজিট রুট (Transit Rules):**
-   - **গ্রিন লাইন মেট্রো:** হাওড়া ময়দান ↔ হাওড়া ↔ শিয়ালদহ ↔ ফুলবাগান ↔ সল্টলেক সেক্টর V (শিয়ালদহ বা হাওড়া থেকে ফুলবাগান যেতে সরাসরি গ্রিন লাইন মেট্রো)।
+৩. **স্থানীয় দূরত্ব ও প্রক্সিমিটি রুট গার্ডরেইল (খুব গুরুত্বপূর্ণ):**
+   - যদি উৎস (Origin) এবং গন্তব্য (Destination) একে অপরের কাছাকাছি এলাকায় হয় (যেমন: বেলিয়াঘাটা থেকে ফুলবাগান বা হরামোহন ঘোষ লেন), তবে শিয়ালদহ, এসপ্ল্যানেড বা সেক্টর V ঘুরে যাওয়ার মতো কোনো বড় বা জটিল মেট্রো রুট কখনও দেওয়া যাবে না।
+   - কাছাকাছি দূরত্বের ক্ষেত্রে সর্বদা সরাসরি লোকাল মাধ্যম (যেমন: অটো, টোটো, হেঁটে যাওয়া বা সরাসরি শর্ট রুট বাস) সাজেস্ট করতে হবে, যার যাতায়াত সময় ১০ থেকে ২০ মিনিটের মধ্যে হয়।
+৪. **আসল ট্রানজিট রুট (দীর্ঘ দূরত্বের জন্য):**
+   - শুধুমাত্র দূরবর্তী জায়গার ক্ষেত্রে সঠিক মেট্রো (গ্রিন লাইন/ব্লু লাইন) বা লোকাল ট্রেন রুট ব্যবহার করুন।
+   - **গ্রিন লাইন মেট্রো:** হাওড়া ময়দান ↔ হাওড়া ↔ শিয়ালদহ ↔ ফুলবাগান ↔ সল্টলেক সেক্টর V.
    - **ব্লু লাইন মেট্রো:** দক্ষিণেশ্বর ↔ দমদম ↔ এসপ্ল্যানেড ↔ কবি সুভাষ।
-   - **ট্রেন রুট:** হাওড়া/শিয়ালদহ থেকে লোকাল ট্রেন ও অটো/টোটো কানেক্টিভিটি।
-৪. **সহজ ও বন্ধুত্বপূর্ণ উত্তর:** সংক্ষেপে প্রশ্ন করলেও সম্পূর্ণ রুট ধাপে ধাপে সুন্দর বাংলা, ইংরেজি বা হিন্দিতে বুঝিয়ে দিন।
+৫. **সহজ ও বন্ধুত্বপূর্ণ উত্তর:** সংক্ষেপে প্রশ্ন করলেও সম্পূর্ণ রুট ধাপে ধাপে সুন্দর বাংলা, ইংরেজি বা হিন্দিতে বুঝিয়ে দিন।
 """
 
 @app.route("/")
@@ -56,7 +59,6 @@ def chat():
         if not GROQ_API_KEY:
             return jsonify({"response": "Error: Render-e GROQ_API_KEY set kora nei!"})
 
-        # Dynamic search call
         search_query = f"{user_message} Kolkata West Bengal institute location address"
         search_context = live_web_search(search_query)
 
