@@ -7,6 +7,8 @@
 - Google Maps search link for location-related queries.
 - Safer frontend rendering (user/model text is not injected as HTML).
 - Production debug disabled; no hard-coded API key or Flask secret.
+- Chat history is kept in the browser and sent with each request (no cookie size limit, works across gunicorn workers). A "New chat" button clears it.
+- Bot replies are rendered as sanitized Markdown (marked + DOMPurify from cdnjs); falls back to plain text if the libraries cannot load.
 - `/health` endpoint for basic health checks.
 
 ## Before deployment
@@ -23,7 +25,7 @@ Service: `https://gemini-course-bot.onrender.com`
 - Environment Variables:
   - `GROQ_API_KEY` = your existing Groq API key (set privately in Render; do not paste it into code/chat)
   - `GROQ_MODEL` = `openai/gpt-oss-120b` (optional; keep current model unless you intentionally change it)
-  - `SECRET_KEY` = a long random secret generated for this service (recommended; do not commit it to GitHub)
+  - `SECRET_KEY` is no longer needed (Flask sessions are not used).
 
 Do not enable Flask debug mode in production. After deployment, test:
 - `https://gemini-course-bot.onrender.com/health`
