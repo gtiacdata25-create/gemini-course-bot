@@ -1,20 +1,19 @@
 from flask import Flask, jsonify, render_template, request, session
-import google.generativeai as genai
+from groq import Groq
 import os
 
 app = Flask(__name__)
 app.secret_key = "jayanta_ai_secret_key_course_bot"
 
-# Gemini API Config
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+# Groq API Config
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 SYSTEM_PROMPT = """
 আপনি 'Jayanta AI' - একজন অত্যন্ত দক্ষ এবং দ্রুত সাড়া প্রদানকারী AI কোর্স এডভাইজার ও ইনস্টিটিউট গাইড।
 ১. যেকোনো ধরনের ট্রেনিং কোর্স, সিলেবাস এবং ভবিষ্যৎ ক্যারিয়ার নিয়ে তথ্য দেওয়া।
 ২. যেকোনো প্রশিক্ষণ কেন্দ্র বা ইনস্টিটিউটের ঠিকানা ও পৌঁছানোর রুট গাইড দেওয়া।
-৩. ব্যবহারকারীর ভাষাতেই (বাংলা, ইংরেজি বা হিন্দি) স্পষ্ট উত্তর দেওয়া।
+৩. ব্যবহারকারীর ভাষাতেই (বাংলা, ইংরেজি বা হিন্দি) স্পষ্ট ও বন্ধুসুলভ উত্তর দেওয়া।
 """
 
 @app.route("/")
@@ -34,22 +33,28 @@ def chat():
     history = session["chat_history"]
 
     try:
-        if not GEMINI_API_KEY:
-            return jsonify({"response": "Error: GEMINI_API_KEY Render-e set kora nei!"})
+        if not GROQ_API_KEY:
+            return jsonify({"response": "Error: GROQ_API_KEY Render-e set kora nei!"})
 
-        # gemini-3.8-flash মডেল ব্যবহার করা হচ্ছে
-        model = genai.GenerativeModel(
-            model_name="gemini-3.8-flash",
-            system_instruction=SYSTEM_PROMPT
+        # History and System Prompt structure for Groq API
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        for item in history:
+            messages.append(item)
+        messages.append({"role": "user", "content": user_message})
+
+        # Ultra-fast Llama 3.3 70B model execution
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+            temperature=0.7,
+            max_tokens=1024
         )
 
-        chat_session = model.start_chat(history=history)
-        response = chat_session.send_message(user_message)
-        bot_response = response.text
+        bot_response = completion.choices[0].message.content
 
-        # Memory update
-        history.append({"role": "user", "parts": [user_message]})
-        history.append({"role": "model", "parts": [bot_response]})
+        # Save to memory session
+        history.append({"role": "user", "content": user_message})
+        history.append({"role": "assistant", "content": bot_response})
         session["chat_history"] = history
         session.modified = True
 
@@ -57,7 +62,9 @@ def chat():
 
     except Exception as e:
         print("Chat Error Details:", str(e))
-        return jsonify({"response": f"API Error Details: {str(e)}"})
+        return jsonify({
+            "response": "দুঃখিত, সার্ভারে সংযোগে সমস্যা হচ্ছে। অনুগ্রহ করে একটু পর আবার চেষ্টা করুন।"
+        })
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
