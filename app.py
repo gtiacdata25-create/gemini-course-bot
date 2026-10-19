@@ -34,16 +34,16 @@ def chat():
 
     try:
         if not GROQ_API_KEY:
-            return jsonify({"response": "Error: GROQ_API_KEY Render-e set kora nei!"})
+            return jsonify({"response": "Error: Render-e GROQ_API_KEY set kora nei!"})
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         for item in history:
             messages.append(item)
         messages.append({"role": "user", "content": user_message})
 
-        # Correct Groq model name
+        # Groq Llama 3.3 70B Versatile
         completion = client.chat.completions.create(
-            model="llama3-70b-8192",
+            model="llama-3.3-70b-versatile",
             messages=messages,
             temperature=0.7,
             max_tokens=1024
@@ -60,9 +60,8 @@ def chat():
 
     except Exception as e:
         print("Chat Error Details:", str(e))
-        return jsonify({
-            "response": "দুঃখিত, সার্ভারে সংযোগে সমস্যা হচ্ছে। অনুগ্রহ করে একটু পর আবার চেষ্টা করুন।"
-        })
+        # Asli error-ti dekhano hocche
+        return jsonify({"response": f"API Error: {str(e)}"})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
