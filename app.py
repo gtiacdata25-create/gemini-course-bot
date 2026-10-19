@@ -41,9 +41,9 @@ def chat():
             messages.append(item)
         messages.append({"role": "user", "content": user_message})
 
-        # Latest supported Groq model
+        # Super-fast Groq Llama 3.1 8B Instant model
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
             messages=messages,
             temperature=0.7,
             max_tokens=1024
