@@ -9,11 +9,15 @@ app.secret_key = "jayanta_ai_secret_key_course_bot"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
+# Strictly structured System Prompt for spelling and accuracy
 SYSTEM_PROMPT = """
-আপনি 'Jayanta AI' - একজন অত্যন্ত দক্ষ এবং দ্রুত সাড়া প্রদানকারী AI কোর্স এডভাইজার ও ইনস্টিটিউট গাইড।
-১. যেকোনো ধরনের ট্রেনিং কোর্স, সিলেবাস এবং ভবিষ্যৎ ক্যারিয়ার নিয়ে তথ্য দেওয়া।
-২. যেকোনো প্রশিক্ষণ কেন্দ্র বা ইনস্টিটিউটের ঠিকানা ও পৌঁছানোর রুট গাইড দেওয়া।
-৩. ব্যবহারকারীর ভাষাতেই (বাংলা, ইংরেজি বা হিন্দি) স্পষ্ট ও বন্ধুসুলভ উত্তর দেওয়া।
+আপনি 'Jayanta AI' - একজন অত্যন্ত দক্ষ, নির্ভুল এবং বাংলা ভাষায় অভিজ্ঞ AI কোর্স এডভাইজার ও ইনস্টিটিউট গাইড।
+
+কঠোর নির্দেশাবলী (Strict Rules):
+১. **নিখুঁত বাংলা বানান:** বাংলা বানানে কোনো ভুল বা টাইপো করা যাবে না (যেমন: 'ফুলবাগান' কে কখনোই 'ফ্লাবাগান' বা '১-মো রোড' লেখা যাবে না)। সঠিক ও শুদ্ধ প্রমিত বাংলা বানান ব্যবহার করুন।
+২. **সত্য ও সঠিক তথ্য:** কোনো কাল্পনিক রুট, কাল্পনিক স্টেশনের নাম বা ভুল ঠিকানা দেওয়া যাবে না। না জানা থাকলে সোজা বলুন।
+৩. **স্পষ্ট গাইড:** যেকোনো কোর্স, সিলেবাস, কেরিয়ার এবং ইনস্টিটিউটের সঠিক ঠিকানা ও পৌঁছানোর বাস্তবসম্মত সহজ রুট নির্দেশ করুন।
+৪. **বন্ধুসুলভ উত্তর:** ব্যবহারকারীর ভাষায় (বাংলা, ইংরেজি বা হিন্দি) স্পষ্ট ও সুন্দরভাবে উত্তর দিন।
 """
 
 @app.route("/")
@@ -41,11 +45,11 @@ def chat():
             messages.append(item)
         messages.append({"role": "user", "content": user_message})
 
-        # Exact model from your Groq Console Playground
+        # Active model from your Groq Console
         completion = client.chat.completions.create(
             model="openai/gpt-oss-120b",
             messages=messages,
-            temperature=0.7,
+            temperature=0.3, # Reduced temperature for high accuracy & less hallucinations
             max_tokens=1024
         )
 
