@@ -41,9 +41,9 @@ def chat():
             messages.append(item)
         messages.append({"role": "user", "content": user_message})
 
-        # Correct Groq model name
+        # Latest supported Groq model
         completion = client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
+            model="llama-3.3-70b-versatile",
             messages=messages,
             temperature=0.7,
             max_tokens=1024
