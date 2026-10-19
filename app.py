@@ -5,22 +5,16 @@ from html import unescape
 
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, jsonify, render_template, request, session
+from flask import Flask, jsonify, render_template, request
 from groq import Groq
 
 app = Flask(__name__)
 
-# Set SECRET_KEY in Render environment variables. Do not hard-code secrets here.
-app.secret_key = os.environ.get("SECRET_KEY")
-if not app.secret_key:
-    # Allows local development, but Render should always have a stable SECRET_KEY.
-    app.secret_key = os.urandom(32).hex()
-
+# Chat history is kept in the browser and sent with each request (stateless).
+# This avoids the ~4KB cookie limit and works across multiple gunicorn workers,
+# so no Flask session / SECRET_KEY is needed.
 app.config.update(
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=os.environ.get("RENDER", "").lower() == "true",
-    MAX_CONTENT_LENGTH=32 * 1024,  # Keep request payloads small.
+    MAX_CONTENT_LENGTH=64 * 1024,  # Room for message + recent history.
 )
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
@@ -131,6 +125,19 @@ def maps_directions_url(destination, origin=""):
         params["origin"] = origin
     return "https://www.google.com/maps/dir/?" + urllib.parse.urlencode(params)
 
+def clean_history(raw):
+    """Validate client-supplied history: only user/assistant text, size-limited."""
+    if not isinstance(raw, list):
+        return []
+    cleaned = []
+    for m in raw:
+        if (isinstance(m, dict) and m.get("role") in ("user", "assistant")
+                and isinstance(m.get("content"), str) and m["content"].strip()):
+            cleaned.append({"role": m["role"], "content": m["content"][:6000]})
+    return cleaned[-MAX_HISTORY_MESSAGES:]
+
+MAPS_LABEL = {"bn": "Google Maps-এ খুঁজুন", "en": "Google Maps", "hi": "Google Maps में खोजें"}
+
 @app.get("/")
 def home():
     return render_template("index.html")
@@ -169,11 +176,7 @@ def chat():
         for i, r in enumerate(search_results, start=1)
     ) or "No usable web search results were returned. Do not invent facts; state that details need verification."
 
-    history = session.get("chat_history", [])
-    if not isinstance(history, list):
-        history = []
-    history = [m for m in history if isinstance(m, dict) and m.get("role") in ("user", "assistant")
-               and isinstance(m.get("content"), str)][-MAX_HISTORY_MESSAGES:]
+    history = clean_history(payload.get("history"))
 
     prompt = (
         f"Selected answer language: {LANGUAGE_NAMES[language]} ({language}).\n"
@@ -204,14 +207,7 @@ def chat():
         # Attach a convenient Maps search link for institute/location queries.
         # The link is a search aid, not verification that the institute exists.
         if re.search(r"(institute|institution|college|course|training|address|route|direction|ইনস্টিটিউট|প্রতিষ্ঠান|কোর্স|ঠিকানা|রুট|कॉलेज|संस्थान|कोर्स|पता|रास्ता)", user_message, re.I):
-            answer += "\n\n**Google Maps:** " + maps_search_url(user_message)
-
-        history.extend([
-            {"role": "user", "content": user_message[:MAX_MESSAGE_CHARS]},
-            {"role": "assistant", "content": answer[:6000]},
-        ])
-        session["chat_history"] = history[-MAX_HISTORY_MESSAGES:]
-        session.modified = True
+            answer += f"\n\n**{MAPS_LABEL[language]}:** " + maps_search_url(user_message)
 
         return jsonify({
             "response": answer,
