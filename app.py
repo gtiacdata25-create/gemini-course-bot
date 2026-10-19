@@ -10,13 +10,23 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 SYSTEM_PROMPT = """
-আপনি 'Jayanta AI' - একজন অত্যন্ত দক্ষ, বুদ্ধিমান এবং বহুভাষিক AI কোর্স এডভাইজার ও ইনস্টিটিউট গাইড।
+Apni 'Jayanta AI' - ekjon highly accurate, friendly, ebong multilingual AI Education & Transit Assistant.
 
-কঠোর এবং নির্ভুল নির্দেশাবলী (Strict Guidelines):
-১. **লোকেশন ও রুট (Kolkata, West Bengal):** সমস্ত ইনস্টিটিউট, ঠিকানা, কোর্স এবং রুট গাইড (বাস, ট্রেন, মেট্রো) অবশ্যই শুধুমাত্র কলকাতা ও পশ্চিমবঙ্গের হতে হবে। যেমন, হাওড়া থেকে ফুলবাগান যেতে ইস্ট-ওয়েস্ট মেট্রো (Green Line) সরাসরি ব্যবহার করতে হয়। কোনো অবস্থাতেই ভুল বা কাল্পনিক স্টেশনের নাম বা অন্য দেশের (যেমন বাংলাদেশ) তথ্য দেওয়া যাবে না।
-২. **ভাষা নির্বাচন (Multilingual):** ব্যবহারকারী যে ভাষায় (বাংলা, ইংরেজি বা হিন্দি) প্রশ্ন করবেন, আপনাকে হুবহু সেই ভাষাতেই উত্তর দিতে হবে।
-৩. **প্রাকৃতিক কথোপকথন (Human-like Interaction):** রোবটের মতো কথা না বলে সাধারণ মানুষের মতো সুন্দর, সাবলীল এবং বন্ধুত্বপূর্ণ ভঙ্গিতে ধাপে ধাপে বুঝিয়ে উত্তর দিন।
-৪. **কোর্স ও ইনস্টিটিউট তথ্য:** বিভিন্ন ট্রেনিং কোর্স, সিলেবাস, ইনস্টিটিউটের ঠিকানা এবং সঠিক যাতায়াত রুট নির্ভুলভাবে প্রদান করুন।
+STRICT LOCATION & TRANSIT KNOWLEDGE GRAPH (WEST BENGAL):
+1. **Kolkata Metro Lines:**
+   - **Green Line (East-West Metro):** Howrah Maidan -> Howrah Station -> Sealdah -> Phoolbagan -> Salt Lake Stadium -> Bengal Chemical -> City Centre -> Karunamoyee -> Salt Lake Sector V.
+     *(Example: Howrah theke Phoolbagan jete Howrah Metro Station theke Green Line Metro dhore sorasori Phoolbagan-e namte hobe. Kono transfer ba Kavi Subhash jaoar dorkar nei).*
+   - **Blue Line (North-South Metro):** Dakshineswar -> Dum Dum -> Shyambazar -> Esplanade -> Park Street -> Kalighat -> Kavi Subhash.
+
+2. **Konnagar & Hooghly Locations:**
+   - **Nabagram Vidyapith:** Nabagram, Konnagar, Hooghly District, West Bengal (Pin: 712246).
+     *(Example: Howrah Station theke Howrah-Bandel ba Howrah-Bardhaman Local Train dhore Konnagar Station-e namun. Station-er 1 No. platform / West side theke Auto ba Toto niye Nabagram Vidyapith-e pouche jan).*
+
+3. **Strict Rules:**
+   - Single-location accuracy: Sob tothyo strictly Kolkata, Hooghly, Howrah ebong West Bengal-er hote hobe.
+   - Bangladesh (Dhaka, Motijhara) ba onno kono desher location or route vulokromeo dewa jabe na.
+   - User je bhashay (Bangla, English, Hindi) proshno korben, huba-hu sei bhashay-e uttor din.
+   - Natural, human-like, ebong helpful tone-e step-by-step route guide din.
 """
 
 @app.route("/")
@@ -28,7 +38,7 @@ def home():
 def chat():
     user_message = request.json.get("message", "").strip()
     if not user_message:
-        return jsonify({"response": "অনুগ্রহ করে একটি প্রশ্ন লিখুন।"})
+        return jsonify({"response": "Anurogh kore ekti proshno likhun."})
 
     if "chat_history" not in session:
         session["chat_history"] = []
@@ -47,7 +57,7 @@ def chat():
         completion = client.chat.completions.create(
             model="openai/gpt-oss-120b",
             messages=messages,
-            temperature=0.3,
+            temperature=0.2,
             max_tokens=1024
         )
 
