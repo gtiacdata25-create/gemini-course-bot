@@ -1,3 +1,4 @@
 Flask
 groq
+duckduckgo_search
 gunicorn
