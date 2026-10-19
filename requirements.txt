@@ -1,5 +1,4 @@
 Flask
 groq
-langchain-community
-duckduckgo-search
 gunicorn
+requests
