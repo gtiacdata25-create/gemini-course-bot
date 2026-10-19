@@ -1,125 +1,96 @@
 <!DOCTYPE html>
 <html lang="bn">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Course Advisor Dashboard</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
-        .dashboard-card { width: 100%; max-width: 750px; height: 85vh; background: #ffffff; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.08); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #e5e7eb; }
-        
-        /* Top Navigation Header */
-        .header { background: #5551FF; color: white; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
-        .header-title { font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 10px; }
-        
-        /* Language Toggle Buttons */
-        .lang-group { display: flex; gap: 8px; }
-        .lang-btn { background: rgba(255, 255, 255, 0.2); color: white; border: none; padding: 6px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; transition: all 0.2s ease; }
-        .lang-btn:hover, .lang-btn.active { background: white; color: #5551FF; }
-
-        /* Chat Body */
-        .chat-area { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; background: #fafafa; }
-        .msg { padding: 12px 18px; border-radius: 12px; max-width: 85%; font-size: 1rem; line-height: 1.5; word-wrap: break-word; }
-        .msg-bot { background: #e0e7ff; color: #1e1b4b; align-self: flex-start; border-bottom-left-radius: 2px; }
-        .msg-user { background: #5551FF; color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
-        
-        /* Name Highlight Style */
-        .highlight-name { color: #5551FF; font-weight: 800; background: #ffffff; padding: 2px 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-
-        /* Bottom Input Form */
-        .input-area { padding: 16px; background: white; border-top: 1px solid #e5e7eb; display: flex; gap: 10px; }
-        .input-area input { flex: 1; padding: 12px 18px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 0.95rem; outline: none; }
-        .input-area input:focus { border-color: #5551FF; }
-        .input-area button { background: #5551FF; color: white; border: none; padding: 12px 24px; border-radius: 10px; font-weight: 700; cursor: pointer; transition: 0.2s; }
-        .input-area button:hover { background: #4338ca; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#4f46e5">
+<title>Jayanta AI · Course & Institute Finder</title>
+<style>
+:root{--brand:#4f46e5;--ink:#172033;--muted:#64748b;--line:#e2e8f0;--bg:#f5f7fb}
+*{box-sizing:border-box}body{margin:0;padding:18px;background:var(--bg);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);min-height:100vh;display:flex;justify-content:center;align-items:center}
+.app{width:100%;max-width:900px;height:min(900px,92vh);min-height:540px;background:white;border:1px solid var(--line);border-radius:18px;box-shadow:0 12px 36px #0f172a12;display:flex;flex-direction:column;overflow:hidden}
+header{background:var(--brand);color:white;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.brand{font-size:1.08rem;font-weight:750}.subtitle{font-size:.82rem;opacity:.88;margin-top:3px}
+.langs{display:flex;gap:6px}.lang{border:1px solid #ffffff66;background:#ffffff20;color:white;border-radius:8px;padding:8px 11px;font-weight:650;cursor:pointer}.lang.active{background:white;color:var(--brand)}
+.hints{padding:12px 18px;border-bottom:1px solid var(--line);font-size:.84rem;color:var(--muted);line-height:1.5}
+.chat{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:12px;background:#fbfcff}
+.msg{max-width:90%;padding:12px 15px;border-radius:14px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.bot{align-self:flex-start;background:#eef2ff;border:1px solid #e0e7ff;border-bottom-left-radius:4px}
+.user{align-self:flex-end;background:var(--brand);color:white;border-bottom-right-radius:4px}
+.msg a{color:#3730a3;text-decoration:underline}.user a{color:white}
+.sources{font-size:.84rem;margin-top:10px;padding-top:8px;border-top:1px solid #c7d2fe}.sources a{display:block;margin-top:5px}
+.status{font-size:.82rem;color:var(--muted);min-height:20px;padding:0 18px}
+form{display:flex;gap:9px;padding:14px;border-top:1px solid var(--line);background:white}
+input{min-width:0;flex:1;padding:13px 14px;border:1px solid #cbd5e1;border-radius:10px;font-size:1rem;outline:none}input:focus{border-color:var(--brand);box-shadow:0 0 0 3px #4f46e51a}
+button.send{background:var(--brand);color:white;border:0;border-radius:10px;padding:0 22px;font-weight:700;cursor:pointer}button:disabled{opacity:.6;cursor:wait}
+footer{padding:0 16px 12px;font-size:.75rem;color:var(--muted)}
+@media(max-width:600px){body{padding:0}.app{height:100vh;min-height:0;border-radius:0}.msg{max-width:96%}header{padding:13px}.langs{width:100%}.lang{flex:1}form{padding:10px}button.send{padding:0 15px}}
+</style>
 </head>
 <body>
-
-    <div class="dashboard-card">
-        <!-- Header with Language Selector Buttons -->
-        <div class="header">
-            <div class="header-title">🎓 Course Advisor Dashboard</div>
-            <div class="lang-group">
-                <button class="lang-btn active" id="btn-bn" onclick="selectLang('bn')">বাংলা</button>
-                <button class="lang-btn" id="btn-en" onclick="selectLang('en')">English</button>
-                <button class="lang-btn" id="btn-hi" onclick="selectLang('hi')">हिन्दी</button>
-            </div>
-        </div>
-
-        <!-- Chat Container -->
-        <div class="chat-area" id="chatArea"></div>
-
-        <!-- Input Bar -->
-        <div class="input-area">
-            <input type="text" id="userInput" placeholder="টাইপ করুন (যেমন: Python কোর্স সম্পর্কে জানতে চাই)..." onkeypress="if(event.key==='Enter') sendMsg()">
-            <button onclick="sendMsg()">Send</button>
-        </div>
-    </div>
-
-    <script>
-        // Language specific welcome messages with highlighted Jayanta AI
-        const welcomeTexts = {
-            'bn': 'স্বাগতম! আমি <span class="highlight-name">জয়ন্ত AI</span>। যেকোনো ধরনের ট্রেনিং কোর্স সম্পর্কে জানতে আমাকে প্রশ্ন করুন।',
-            'en': 'Welcome! I am <span class="highlight-name">Jayanta AI</span>. Ask me any question to learn about any training course.',
-            'hi': 'स्वागत है! मैं <span class="highlight-name">जयंत AI</span> हूँ। किसी भी प्रकार के ट्रेनिंग कोर्स के बारे में जानने के लिए मुझसे प्रश्न पूछें।'
-        };
-
-        const placeholders = {
-            'bn': 'টাইপ করুন (যেমন: Python কোর্স সম্পর্কে জানতে চাই)...',
-            'en': 'Type here (e.g. I want to learn Python)...',
-            'hi': 'टाइप करें (जैसे: पाइथन कोर्स के बारे में जानना है)...'
-        };
-
-        // Initialize default view in Bangla
-        window.onload = function() {
-            selectLang('bn');
-        };
-
-        function selectLang(lang) {
-            // Update Active button style
-            document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
-            document.getElementById(`btn-${lang}`).classList.add('active');
-
-            // Update Placeholder text
-            document.getElementById('userInput').placeholder = placeholders[lang];
-
-            // Clear chat window and show new welcome message
-            const chatArea = document.getElementById('chatArea');
-            chatArea.innerHTML = '';
-            addMessage(welcomeTexts[lang], 'msg-bot');
-        }
-
-        function addMessage(htmlContent, className) {
-            const chatArea = document.getElementById('chatArea');
-            const div = document.createElement('div');
-            div.className = `msg ${className}`;
-            div.innerHTML = htmlContent;
-            chatArea.appendChild(div);
-            chatArea.scrollTop = chatArea.scrollHeight;
-        }
-
-        async function sendMsg() {
-            const input = document.getElementById('userInput');
-            const text = input.value.trim();
-            if (!text) return;
-
-            addMessage(text, 'msg-user');
-            input.value = '';
-
-            try {
-                const res = await fetch('/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text })
-                });
-                const data = await res.json();
-                addMessage(data.response || data.reply || 'দুঃখিত, কোনো সমস্যা হয়েছে!', 'msg-bot');
-            } catch (err) {
-                addMessage('সার্ভার কানেকশনে সমস্যা হচ্ছে!', 'msg-bot');
-            }
-        }
-    </script>
+<main class="app">
+<header>
+  <div><div class="brand">🎓 Jayanta AI · Course & Institute Finder</div><div class="subtitle" id="subtitle">পশ্চিমবঙ্গের কোর্স, প্রতিষ্ঠান ও ঠিকানা খুঁজুন</div></div>
+  <div class="langs" role="group" aria-label="Answer language">
+    <button class="lang active" data-lang="bn" type="button">বাংলা</button>
+    <button class="lang" data-lang="en" type="button">English</button>
+    <button class="lang" data-lang="hi" type="button">हिन्दी</button>
+  </div>
+</header>
+<div class="hints" id="hints">উদাহরণ: “হুগলিতে Montessori training institute খুঁজুন” · “এই কোর্সের eligibility ও fees কী?” · “Howrah থেকে কীভাবে যাব?”</div>
+<section class="chat" id="chat" aria-live="polite"></section>
+<div class="status" id="status" aria-live="polite"></div>
+<form id="form">
+  <input id="message" maxlength="4000" autocomplete="off" placeholder="আপনার প্রশ্ন লিখুন…" aria-label="Your question">
+  <button class="send" id="send" type="submit">পাঠান</button>
+</form>
+<footer>তথ্য পরিবর্তন হতে পারে। ভর্তি, ফি ও recognition-এর জন্য সংশ্লিষ্ট official source যাচাই করুন।</footer>
+</main>
+<script>
+let currentLang='bn';
+const labels={
+ bn:{subtitle:'পশ্চিমবঙ্গের কোর্স, প্রতিষ্ঠান ও ঠিকানা খুঁজুন',hints:'উদাহরণ: “হুগলিতে Montessori training institute খুঁজুন” · “এই কোর্সের eligibility ও fees কী?” · “Howrah থেকে কীভাবে যাব?”',placeholder:'আপনার প্রশ্ন লিখুন…',send:'পাঠান',welcome:'নমস্কার! আমি Jayanta AI। পশ্চিমবঙ্গের training institute, course details, ঠিকানা ও route সম্পর্কে প্রশ্ন করুন।',busy:'খোঁজ করা হচ্ছে…',error:'সার্ভারের সঙ্গে যোগাযোগ করা যাচ্ছে না। পরে আবার চেষ্টা করুন.'},
+ en:{subtitle:'Find courses, institutes and addresses across West Bengal',hints:'Examples: “Find Montessori training institutes in Hooghly” · “What are the eligibility and fees?” · “How do I travel from Howrah?”',placeholder:'Type your question…',send:'Send',welcome:'Hello! I am Jayanta AI. Ask me about training institutes, course details, addresses and routes in West Bengal.',busy:'Searching…',error:'Unable to contact the server. Please try again.'},
+ hi:{subtitle:'पश्चिम बंगाल में कोर्स, संस्थान और पते खोजें',hints:'उदाहरण: “हुगली में Montessori training institute खोजें” · “योग्यता और फीस क्या है?” · “हावड़ा से कैसे पहुँचें?”',placeholder:'अपना प्रश्न लिखें…',send:'भेजें',welcome:'नमस्ते! मैं Jayanta AI हूँ। पश्चिम बंगाल के प्रशिक्षण संस्थानों, कोर्स, पते और रास्तों के बारे में पूछें।',busy:'खोज जारी है…',error:'सर्वर से संपर्क नहीं हो पाया। कृपया फिर प्रयास करें।'}
+};
+const chat=document.getElementById('chat'), input=document.getElementById('message'), statusEl=document.getElementById('status'), send=document.getElementById('send');
+function safeLinkify(container,text){
+  // Text remains text; only explicit http(s) URLs become anchors.
+  const re=/(https?:\/\/[^\s<>"']+)/g;let last=0,m;
+  while((m=re.exec(text))!==null){
+    container.appendChild(document.createTextNode(text.slice(last,m.index)));
+    let url=m[0].replace(/[),.;!?]+$/,'');const tail=m[0].slice(url.length);
+    try{const parsed=new URL(url);if(parsed.protocol==='http:'||parsed.protocol==='https:'){const a=document.createElement('a');a.href=parsed.href;a.textContent=url;a.target='_blank';a.rel='noopener noreferrer';container.appendChild(a)}else container.appendChild(document.createTextNode(url))}
+    catch{container.appendChild(document.createTextNode(url))}
+    if(tail)container.appendChild(document.createTextNode(tail));last=m.index+m[0].length;
+  }
+  container.appendChild(document.createTextNode(text.slice(last)));
+}
+function addMessage(text,who,sources=[]){
+ const div=document.createElement('div');div.className='msg '+(who==='user'?'user':'bot');
+ safeLinkify(div,String(text||'')); 
+ if(who!=='user'&&sources.length){const box=document.createElement('div');box.className='sources';const label=document.createElement('div');label.textContent=currentLang==='en'?'Search results (verify official details):':currentLang==='hi'?'खोज परिणाम (आधिकारिक विवरण जाँचें):':'অনুসন্ধানের ফল (official তথ্য যাচাই করুন):';box.appendChild(label);
+ sources.forEach(s=>{if(!s.url||!/^https?:\/\//i.test(s.url))return;const a=document.createElement('a');a.href=s.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=s.title||s.url;box.appendChild(a)});div.appendChild(box)}
+ chat.appendChild(div);chat.scrollTop=chat.scrollHeight;
+}
+function setLang(lang){
+ currentLang=lang;document.documentElement.lang=lang;
+ document.querySelectorAll('.lang').forEach(b=>b.classList.toggle('active',b.dataset.lang===lang));
+ const t=labels[lang];document.getElementById('subtitle').textContent=t.subtitle;document.getElementById('hints').textContent=t.hints;input.placeholder=t.placeholder;send.textContent=t.send;
+ if(!chat.children.length)addMessage(t.welcome,'bot');
+}
+document.querySelectorAll('.lang').forEach(b=>b.addEventListener('click',()=>setLang(b.dataset.lang)));
+document.getElementById('form').addEventListener('submit',async e=>{
+ e.preventDefault();const text=input.value.trim();if(!text||send.disabled)return;
+ addMessage(text,'user');input.value='';send.disabled=true;statusEl.textContent=labels[currentLang].busy;
+ try{
+  const res=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,language:currentLang})});
+  const data=await res.json();addMessage(data.response||labels[currentLang].error,'bot',data.sources||[]);
+  if(!res.ok)statusEl.textContent='';
+ }catch(err){addMessage(labels[currentLang].error,'bot')}
+ finally{send.disabled=false;statusEl.textContent='';input.focus()}
+});
+setLang('bn');
+</script>
 </body>
 </html>
