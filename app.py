@@ -43,11 +43,12 @@ def chat():
         messages.append({"role": "user", "content": user_message})
 
         # Ultra-fast Llama 3.3 70B model execution
-        completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=messages,
-            temperature=0.7,
-            max_tokens=1024
+       completion = client.chat.completions.create(
+    model="llama3-70b-8192",
+    messages=messages,
+    temperature=0.7,
+    max_tokens=1024
+)
         )
 
         bot_response = completion.choices[0].message.content
