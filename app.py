@@ -36,24 +36,21 @@ def chat():
         if not GROQ_API_KEY:
             return jsonify({"response": "Error: GROQ_API_KEY Render-e set kora nei!"})
 
-        # History and System Prompt structure for Groq API
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         for item in history:
             messages.append(item)
         messages.append({"role": "user", "content": user_message})
 
-        # Ultra-fast Llama 3.3 70B model execution
-       completion = client.chat.completions.create(
-    model="llama3-70b-8192",
-    messages=messages,
-    temperature=0.7,
-    max_tokens=1024
-)
+        # Correct Groq model name
+        completion = client.chat.completions.create(
+            model="llama3-70b-8192",
+            messages=messages,
+            temperature=0.7,
+            max_tokens=1024
         )
 
         bot_response = completion.choices[0].message.content
 
-        # Save to memory session
         history.append({"role": "user", "content": user_message})
         history.append({"role": "assistant", "content": bot_response})
         session["chat_history"] = history
