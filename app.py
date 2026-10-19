@@ -41,9 +41,9 @@ def chat():
             messages.append(item)
         messages.append({"role": "user", "content": user_message})
 
-        # Groq Llama 3.3 70B Versatile
+        # Correct Groq model name
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-70b-versatile",
             messages=messages,
             temperature=0.7,
             max_tokens=1024
@@ -60,7 +60,6 @@ def chat():
 
     except Exception as e:
         print("Chat Error Details:", str(e))
-        # Asli error-ti dekhano hocche
         return jsonify({"response": f"API Error: {str(e)}"})
 
 if __name__ == "__main__":
