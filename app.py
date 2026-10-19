@@ -1,6 +1,5 @@
 from flask import Flask, jsonify, render_template, request, session
 from groq import Groq
-from duckduckgo_search import DDGS
 import os
 
 app = Flask(__name__)
@@ -10,27 +9,14 @@ app.secret_key = "jayanta_ai_secret_key_course_bot"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
-def search_web(query):
-    """Real-time live search function"""
-    try:
-        results = []
-        ddgs = DDGS()
-        # Search live results
-        for r in ddgs.text(query, max_results=3):
-            if 'body' in r:
-                results.append(r['body'])
-        return "\n".join(results)
-    except Exception as e:
-        print("Search Error:", e)
-        return ""
-
 SYSTEM_PROMPT = """
-Apni 'Jayanta AI' - ekjon multilingual real-time AI assistant.
+আপনি 'Jayanta AI' - একজন অত্যন্ত দক্ষ, বুদ্ধিমান এবং বহুভাষিক AI কোর্স এডভাইজার ও ইনস্টিটিউট গাইড।
 
-Niyomabali:
-1. User je bhashay (Bangla, English, Hindi) proshno korben, huba-hu sei bhashay-e uttor din.
-2. Interne-er live search data bebohar kore accurate Course info, Institute Address ebong Bus/Train/Metro Route guide din.
-3. Ekdom sahaj, sundor ebong manusher moton bandhubhabapurna conversation korun.
+কঠোর এবং নির্ভুল নির্দেশাবলী (Strict Guidelines):
+১. **লোকেশন ও রুট (Kolkata, West Bengal):** সমস্ত ইনস্টিটিউট, ঠিকানা, কোর্স এবং রুট গাইড (বাস, ট্রেন, মেট্রো) অবশ্যই শুধুমাত্র কলকাতা ও পশ্চিমবঙ্গের হতে হবে। যেমন, হাওড়া থেকে ফুলবাগান যেতে ইস্ট-ওয়েস্ট মেট্রো (Green Line) সরাসরি ব্যবহার করতে হয়। কোনো অবস্থাতেই ভুল বা কাল্পনিক স্টেশনের নাম বা অন্য দেশের (যেমন বাংলাদেশ) তথ্য দেওয়া যাবে না।
+২. **ভাষা নির্বাচন (Multilingual):** ব্যবহারকারী যে ভাষায় (বাংলা, ইংরেজি বা হিন্দি) প্রশ্ন করবেন, আপনাকে হুবহু সেই ভাষাতেই উত্তর দিতে হবে।
+৩. **প্রাকৃতিক কথোপকথন (Human-like Interaction):** রোবটের মতো কথা না বলে সাধারণ মানুষের মতো সুন্দর, সাবলীল এবং বন্ধুত্বপূর্ণ ভঙ্গিতে ধাপে ধাপে বুঝিয়ে উত্তর দিন।
+৪. **কোর্স ও ইনস্টিটিউট তথ্য:** বিভিন্ন ট্রেনিং কোর্স, সিলেবাস, ইনস্টিটিউটের ঠিকানা এবং সঠিক যাতায়াত রুট নির্ভুলভাবে প্রদান করুন।
 """
 
 @app.route("/")
@@ -42,7 +28,7 @@ def home():
 def chat():
     user_message = request.json.get("message", "").strip()
     if not user_message:
-        return jsonify({"response": "Anurogh kore ekti proshno likhun."})
+        return jsonify({"response": "অনুগ্রহ করে একটি প্রশ্ন লিখুন।"})
 
     if "chat_history" not in session:
         session["chat_history"] = []
@@ -53,21 +39,11 @@ def chat():
         if not GROQ_API_KEY:
             return jsonify({"response": "Error: Render-e GROQ_API_KEY set kora nei!"})
 
-        # 1. Live Web Search
-        search_results = search_web(user_message)
-        
-        # 2. Context Prompt Setup
-        if search_results:
-            context_message = f"User Question: {user_message}\n\nReal-time Search Data:\n{search_results}\n\n[Instruction: Answer the user in their requested language (Bengali/English/Hindi) naturally based on the search data.]"
-        else:
-            context_message = user_message
-
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         for item in history:
             messages.append(item)
-        messages.append({"role": "user", "content": context_message})
+        messages.append({"role": "user", "content": user_message})
 
-        # 3. Groq API Call
         completion = client.chat.completions.create(
             model="openai/gpt-oss-120b",
             messages=messages,
