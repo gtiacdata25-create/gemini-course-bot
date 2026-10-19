@@ -1,32 +1,27 @@
 from flask import Flask, jsonify, render_template, request, session
+from langchain_community.tools import DuckDuckGoSearchRun
 from groq import Groq
 import os
 
 app = Flask(__name__)
-app.secret_key = "jayanta_ai_secret_key_course_bot"
+app.secret_key = "jayanta_ai_secret_key_dynamic_bot"
 
 # Groq API Config
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+search_tool = DuckDuckGoSearchRun()
 
 SYSTEM_PROMPT = """
-Apni 'Jayanta AI' - ekjon highly accurate, friendly, ebong multilingual AI Education & Transit Assistant.
+আপনি 'Jayanta AI' - যেকোনো ইনস্টিটিউট ও লোকেশনের জন্য একটি রিয়েল-টাইম, গতিশীল এবং অতি-নির্ভুল গাইড।
 
-STRICT LOCATION & TRANSIT KNOWLEDGE GRAPH (WEST BENGAL):
-1. **Kolkata Metro Lines:**
-   - **Green Line (East-West Metro):** Howrah Maidan -> Howrah Station -> Sealdah -> Phoolbagan -> Salt Lake Stadium -> Bengal Chemical -> City Centre -> Karunamoyee -> Salt Lake Sector V.
-     *(Example: Howrah theke Phoolbagan jete Howrah Metro Station theke Green Line Metro dhore sorasori Phoolbagan-e namte hobe. Kono transfer ba Kavi Subhash jaoar dorkar nei).*
-   - **Blue Line (North-South Metro):** Dakshineswar -> Dum Dum -> Shyambazar -> Esplanade -> Park Street -> Kalighat -> Kavi Subhash.
-
-2. **Konnagar & Hooghly Locations:**
-   - **Nabagram Vidyapith:** Nabagram, Konnagar, Hooghly District, West Bengal (Pin: 712246).
-     *(Example: Howrah Station theke Howrah-Bandel ba Howrah-Bardhaman Local Train dhore Konnagar Station-e namun. Station-er 1 No. platform / West side theke Auto ba Toto niye Nabagram Vidyapith-e pouche jan).*
-
-3. **Strict Rules:**
-   - Single-location accuracy: Sob tothyo strictly Kolkata, Hooghly, Howrah ebong West Bengal-er hote hobe.
-   - Bangladesh (Dhaka, Motijhara) ba onno kono desher location or route vulokromeo dewa jabe na.
-   - User je bhashay (Bangla, English, Hindi) proshno korben, huba-hu sei bhashay-e uttor din.
-   - Natural, human-like, ebong helpful tone-e step-by-step route guide din.
+কঠোর নীতিমালা (Strict Rules):
+১. **যেকোনো অজানা ইনস্টিটিউটের অনুসন্ধান:** ব্যবহারকারী পশ্চিমবঙ্গের যেকোনো ইনস্টিটিউট, কলেজ বা স্কুলের নাম বললে, লাইভ ইন্টারনেটের তথ্য ব্যবহার করে তার সঠিক অবস্থান (যেমন: ফুলবাগান, কলকাতা) চিহ্নিত করুন।
+২. **পশ্চিমবঙ্গের ভূগোল ভিত্তিক অবস্থান (Geo-Fencing):** যেকোনো অবস্থান বা ইনস্টিটিউট অবশ্যই ভারতের পশ্চিমবঙ্গের (Kolkata, Howrah, Hooghly ইত্যাদি) সীমানার ভেতরের হতে হবে। বাংলাদেশের কোনো অবস্থান বা নাম আনবেন না।
+৩. **আসল ট্রানজিট রুট (Kolkata Transit Integration):**
+   - **গ্রিন লাইন মেট্রো:** হাওড়া ময়দান ↔ হাওড়া ↔ শিয়ালদহ ↔ ফুলবাগান ↔ সল্টলেক সেক্টর V (হাওড়া বা শিয়ালদহ থেকে ফুলবাগান যেতে সরাসরি গ্রিন লাইন মেট্রো ব্যবহার করতে হয়)।
+   - **ব্লু লাইন মেট্রো:** দক্ষিণেশ্বর ↔ দমদম ↔ এসপ্ল্যানেড ↔ কবি সুভাষ।
+   - **ট্রেন রুট:** হাওড়া/শিয়ালদহ থেকে সংশ্লিষ্ট লোকাল ট্রেন ও অটো/টোটো কানেক্টিভিটি।
+৪. **স্বাভাবিক ও বন্ধুভাবাপন্ন আচরণ:** ব্যবহারকারী সংক্ষেপে প্রশ্ন করলেও (যেমন: "শিয়ালদহ থেকে গ্লোবাল টেকনিক্যাল ইনস্টিটিউট কিভাবে যাব") নিজে থেকেই অবস্থান চিহ্নিত করে সাবলীল বাংলা, ইংরেজি বা হিন্দিতে ধাপ-ধাপে রুট বুঝিয়ে দিন।
 """
 
 @app.route("/")
@@ -38,7 +33,7 @@ def home():
 def chat():
     user_message = request.json.get("message", "").strip()
     if not user_message:
-        return jsonify({"response": "Anurogh kore ekti proshno likhun."})
+        return jsonify({"response": "অনুগ্রহ করে একটি প্রশ্ন লিখুন।"})
 
     if "chat_history" not in session:
         session["chat_history"] = []
@@ -49,10 +44,20 @@ def chat():
         if not GROQ_API_KEY:
             return jsonify({"response": "Error: Render-e GROQ_API_KEY set kora nei!"})
 
+        # Step 1: Dynamic Live Search for the user query
+        search_query = f"{user_message} Kolkata West Bengal location route address"
+        try:
+            search_results = search_tool.run(search_query)
+        except Exception:
+            search_results = "No search result found"
+
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         for item in history:
             messages.append(item)
-        messages.append({"role": "user", "content": user_message})
+
+        # Context-rich prompt passing search results to LLM
+        user_prompt = f"User Question: {user_message}\nSearch Information: {search_results}"
+        messages.append({"role": "user", "content": user_prompt})
 
         completion = client.chat.completions.create(
             model="openai/gpt-oss-120b",
