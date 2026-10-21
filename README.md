@@ -54,3 +54,9 @@ Do not enable Flask debug mode in production. After deployment, test:
 
 ## Rollback
 If the new deployment fails, use GitHub's commit history to revert to the previously recorded working commit, or restore the backup copy. Do not delete the old working source until the new deployment passes testing.
+
+## v6: official website reading, reviews link, profile answers
+- If the user pastes the institute's website link, or the Google Places entry / a matching search result has one, the bot reads the home page plus up to 3 key pages (courses, contact, admission, placement...) and labels it "the institute's own claims". It checks robots.txt, allows only public http/https sites (ports 80/443), limits size, and skips social/aggregator sites. Set `SITE_FETCH_ENABLED=0` to turn it off.
+- Institute names are kept exactly as typed (no transliteration).
+- Place cards get a "⭐ See reviews on Google Maps" link (no key needed). The bot never invents ratings or review text.
+- Answers follow an institute-profile layout and name the regulator/board to verify for regulated courses.
