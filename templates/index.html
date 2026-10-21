@@ -155,6 +155,7 @@ function addPlaces(div,places){
   {const t2=RT[currentLang]||RT.bn;if(p.source==='osm'){const m=el('div','meta',t2.srcOsm);c.appendChild(m)}if(p.match==='area'){const m=el('div','meta','⚠ '+t2.areaOnly);c.appendChild(m)}}
   if(p.status&&p.status!=='OPERATIONAL'){const m=document.createElement('div');m.className='meta';m.textContent=p.status.replace(/_/g,' ').toLowerCase();c.appendChild(m)}
   if(p.maps_url&&/^https:\/\//i.test(p.maps_url)){const a=document.createElement('a');a.href=p.maps_url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=t.openMaps+' ↗';c.appendChild(a)}
+  if(p.match==='exact'&&p.reviews_url&&/^https:\/\//i.test(p.reviews_url)){const a=document.createElement('a');a.href=p.reviews_url;a.target='_blank';a.rel='noopener noreferrer';a.style.marginLeft='12px';a.textContent=(currentLang==='en'?'⭐ See reviews on Google Maps':currentLang==='hi'?'⭐ Google Maps पर रिव्यू देखें':'⭐ Google Maps-এ রিভিউ দেখুন')+' ↗';c.appendChild(a)}
   wrap.appendChild(c);
  });
  div.appendChild(wrap);
