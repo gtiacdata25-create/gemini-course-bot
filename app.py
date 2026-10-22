@@ -66,6 +66,7 @@ CORE TASKS:
 - INSTITUTE PROFILE: when the user asks about an institute, organise the answer as short sections: Location and map result; Courses; Eligibility, duration and fees; Affiliation/recognition; Placement; Reviews; Contact; and how to get there only if asked. Mark what comes from the institute's own website as "the institute says". Fees, placement and recognition claims are claims until confirmed by a regulator or board; ISO or MSME listings are not education-board recognition. Do not state a fee, duration or placement figure that is not in the excerpts. For regulated fields (teacher training such as D.El.Ed/B.Ed, nursing, pharmacy, medical/paramedical, university distance programmes, vocational skill courses) tell the user which kind of regulator or board to check (for example NCTE or the state primary education board, the nursing or pharmacy council, UGC for universities, the state skill-development body), and never promise a licence or a job.
 - If "Official website excerpts" are provided, you MUST use them: list the courses, programmes, contact details and any other facts they contain (marked "the institute says"), and never say that no source was found. Only say a detail (fee, duration, affiliation) is missing when the excerpts really lack it. Search result snippets that mention the institute may be used the same way, labelled as web mentions.
 - If "Third-party web pages" are provided, use their facts too (courses, fees, contact, ratings if stated), labelled as from that web page and as possibly outdated; official-site facts take priority.
+- STRICT SOURCING: every duration, eligibility rule, fee, approval/affiliation, rating, phone number or course description you write must appear literally in the excerpts, snippets or map data you were given. Do NOT fill gaps from general knowledge (for example typical course lengths such as '2 years' or '12th pass'). If it is not in the excerpts, leave that row or column out, or write 'not stated'. Never write 'the institute says' for something that came only from a search snippet; call that 'a web snippet says'. Never expand an abbreviation (for example CMS & ED) unless the excerpts expand it themselves. ISO or MSME listings are not education-board recognition; say so if they are the only credentials mentioned. Do not give an NCTE, board or council approval unless the excerpt names it for that specific course.
 - Lead with what you found. Do not write a list of negatives like 'no information found' or 'not mentioned'. Put anything missing in ONE short closing line (for example: fees and recognition are not stated, ask the institute for them in writing), and never say no source was found when sources are present.
 - When details are missing, say exactly what was found, what was not found, and what to ask the institute (which board or university gives the certificate, total fee in writing, batch size, who teaches, placement record), instead of ending with only "not available".
 - If "Route data" is provided, it is the ONLY source for bus, train, metro and tram lines, stops, stations, distances and times. Never add bus numbers, lines, stations, fares or timings that are not in it. Distances to stations are straight-line distances, not walking distances. Give a short friendly summary (about 6-8 lines): the best option, how to reach the nearest metro/railway station/bus stop, and a taxi alternative. The app shows the full step-by-step route card below your message, so do not repeat every step. If the data says no public-transport route was found, say Google had no bus/train/metro data for this trip and suggest the nearest station and a cab. Taxi fares are shown inside the cab app; never state a fare.
@@ -394,7 +395,7 @@ def serper_places(intent, language):
     if cached is not None:
         return cached
     try:
-        data = _serper_post("places", {"q": query, "gl": "in", "hl": "bn" if language == "bn" else "en"})
+        data = _serper_post("places", {"q": query, "gl": "in", "hl": "en"})  # English titles so names can be matched
     except Exception as exc:
         app.logger.warning("Serper places failed: %s", type(exc).__name__)
         return []
@@ -405,7 +406,8 @@ def serper_places(intent, language):
         if not isinstance(item, dict) or not item.get("title"):
             continue
         title = str(item["title"])
-        if want and not _name_matches(name, title):
+        site_host = urllib.parse.urlparse(str(item.get("website") or "")).netloc
+        if want and not _name_matches(name, f"{title} {site_host}"):
             continue
         lat, lng = item.get("latitude"), item.get("longitude")
         cid = str(item.get("cid") or "")
@@ -1035,6 +1037,7 @@ SITE_HOME_CHARS = 3500
 SITE_SUBPAGE_CHARS = 2500
 SITE_TOTAL_CHARS = 10000
 SITE_CACHE = TTLCache(ttl=30 * 60, maxsize=64)
+SITE_REASONS = {}  # url -> short reason of the last read attempt (for the diagnostic line)
 ROBOTS_CACHE = TTLCache(ttl=60 * 60, maxsize=64)
 SITE_LINK_WORDS = ("course", "about", "contact", "admission", "fee", "placement", "program", "training", "diploma",
                    "certificate", "affiliat", "recogni", "ttc", "syllabus", "faculty", "batch")
@@ -1148,8 +1151,12 @@ def read_site(url, name_hint, loc_hints, deep=True):
         return cached or None
     result = None
     try:
-        if _robots_allows(url):
+        if not _robots_allows(url):
+            SITE_REASONS[url] = "robots.txt disallows"
+        else:
             final, html = _safe_get(url)
+            if not html:
+                SITE_REASONS[url] = "page could not be fetched"
             if html:
                 pages, texts = [final], [_page_text(html, SITE_HOME_CHARS if deep else 4500)]
                 subs = [u for u in _candidate_links(html, final) if _robots_allows(u)] if deep else []
@@ -1165,6 +1172,7 @@ def read_site(url, name_hint, loc_hints, deep=True):
                 name_ok = _name_matches(name_hint, text) if _name_tokens(name_hint) else None
                 loc_ok = (any(h in low for h in loc_hints) if loc_hints else None)
                 result = {"url": final, "pages": pages, "text": text, "name_ok": name_ok, "loc_ok": loc_ok}
+                SITE_REASONS[url] = "read"
     except Exception:
         app.logger.warning("Site reading failed", exc_info=False)
     SITE_CACHE.set(cache_key, result or False)
@@ -1178,7 +1186,7 @@ def _location_hints(user_message, intent):
                 hints.add(word)
     return sorted(hints)
 
-def find_official_site(intent, user_text, places, search_results):
+def find_official_site(intent, user_text, places, search_results, log=None):
     """Find and read the institute's own website. Order: links the user pasted (this message or earlier ones), the Places
     website, search results whose domain looks like the name, guessed domains built from the name (strictly verified),
     then the top search-result pages themselves (verified by name and locality)."""
@@ -1196,10 +1204,14 @@ def find_official_site(intent, user_text, places, search_results):
         tried.add(key)
         info = read_site(url, name, hints)
         if not info:
+            if log is not None and source != "guess":
+                log.append(f"{host_of(url)}: {SITE_REASONS.get(url, 'not read')}")
             return None
         if source != "user":
             # Not given by the user: it must visibly be this institute.
             if info["name_ok"] is not True or info["loc_ok"] is False or (strict and info["loc_ok"] is not True):
+                if log is not None and source != "guess":
+                    log.append(f"{host_of(url)}: page did not match the institute name/area")
                 return None
         info["source"] = source
         return info
@@ -1457,7 +1469,7 @@ def chat():
 
     # 2b + 3) Official website / web pages and the route guide run in parallel, each with a time budget.
     user_urls_text = user_message + " " + " ".join(m["content"] for m in history if m["role"] == "user")
-    site, web_pages = None, []
+    site, web_pages, site_log = None, [], []
     route_guide, route_status = None, None
     site_in_memory = from_memory and bool(memory.get("site_checked")) and not URL_RE.search(user_message)
     want_site = (intent["needs_lookup"] and (intent["wants_details"] or URL_RE.search(user_message)) and bool(intent["institute"] or intent["institute_en"] or URL_RE.search(user_message))
@@ -1465,9 +1477,10 @@ def chat():
     want_route = intent["needs_lookup"] and intent["wants_route"]
 
     def site_task():
-        found = find_official_site(intent, user_urls_text, places, search_results)
+        log = []
+        found = find_official_site(intent, user_urls_text, places, search_results, log)
         pages = read_web_pages(intent, user_urls_text, search_results, found["url"] if found else None) if intent["wants_details"] else []
-        return found, pages
+        return found, pages, log
 
     pool = ThreadPoolExecutor(max_workers=2)
     f_site = pool.submit(site_task) if want_site else None
@@ -1479,7 +1492,7 @@ def chat():
     if f_site is not None:
         got = _done_result(f_site)
         if got:
-            site, web_pages = got
+            site, web_pages, site_log = got
     if f_route is not None:
         got = _done_result(f_route)
         if got:
@@ -1566,12 +1579,14 @@ def chat():
             fallback_maps = maps_search_url(intent["place_query"])
             answer += f"\n\n**{MAPS_LABEL[language]}:** " + fallback_maps
 
-        sources_out = ([{"title": "🌐 " + SITE_LABEL[language], "url": site["url"], "snippet": ""}] if site else []) + [{"title": "📄 " + urllib.parse.urlparse(w["url"]).netloc, "url": w["url"], "snippet": ""} for w in web_pages] + search_results
+        _nm = intent["institute_en"] or intent["institute"]
+        shown_results = [r for r in search_results if _result_relevant(_nm, r)] if (_name_tokens(_nm) and intent["needs_lookup"]) else search_results
+        sources_out = ([{"title": "🌐 " + SITE_LABEL[language], "url": site["url"], "snippet": ""}] if site else []) + [{"title": "📄 " + urllib.parse.urlparse(w["url"]).netloc, "url": w["url"], "snippet": ""} for w in web_pages] + shown_results
         return jsonify({
             "response": answer,
             "language": language,
             "sources": sources_out,
-            "diag": {"search_results": len(search_results), "search_backend": SEARCH_STATS["last_backend"], "search_error": SEARCH_STATS["last_error"] if not search_results else "", "official_site": bool(site), "web_pages": len(web_pages), "from_memory": from_memory},
+            "diag": {"search_results": len(search_results), "search_backend": SEARCH_STATS["last_backend"], "search_error": SEARCH_STATS["last_error"] if not search_results else "", "official_site": bool(site), "web_pages": len(web_pages), "from_memory": from_memory, "site_tried": site_log[:4]},
             "site": ({"url": site["url"], "pages": site["pages"], "name_ok": site["name_ok"], "loc_ok": site["loc_ok"]} if site else None),
             "places": places,
             "route": route_guide,
