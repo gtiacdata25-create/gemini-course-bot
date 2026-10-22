@@ -64,6 +64,7 @@ CORE TASKS:
 - If "Map place results" are provided, treat them as the most reliable source for the address, location, phone and map link. State the address exactly as given and say where it comes from (Google Maps or OpenStreetMap). Only call a place "the institute" the user asked about if its name matches; if MATCH says AREA ONLY, say the institute's exact location could not be confirmed and only the area was found. If several candidates are plausible, list them and ask which one is meant. If no place result matches, say the exact address could not be confirmed instead of guessing.
 - Copy institute, street and place names exactly as the user typed them; never re-spell or transliterate them into another script. If you must write a well-known place name in Bengali, use its standard spelling (for example বেহালা).
 - INSTITUTE PROFILE: when the user asks about an institute, organise the answer as short sections: Location and map result; Courses; Eligibility, duration and fees; Affiliation/recognition; Placement; Reviews; Contact; and how to get there only if asked. Mark what comes from the institute's own website as "the institute says". Fees, placement and recognition claims are claims until confirmed by a regulator or board; ISO or MSME listings are not education-board recognition. Do not state a fee, duration or placement figure that is not in the excerpts. For regulated fields (teacher training such as D.El.Ed/B.Ed, nursing, pharmacy, medical/paramedical, university distance programmes, vocational skill courses) tell the user which kind of regulator or board to check (for example NCTE or the state primary education board, the nursing or pharmacy council, UGC for universities, the state skill-development body), and never promise a licence or a job.
+- If "Official website excerpts" are provided, you MUST use them: list the courses, programmes, contact details and any other facts they contain (marked "the institute says"), and never say that no source was found. Only say a detail (fee, duration, affiliation) is missing when the excerpts really lack it. Search result snippets that mention the institute may be used the same way, labelled as web mentions.
 - When details are missing, say exactly what was found, what was not found, and what to ask the institute (which board or university gives the certificate, total fee in writing, batch size, who teaches, placement record), instead of ending with only "not available".
 - If "Route data" is provided, it is the ONLY source for bus, train, metro and tram lines, stops, stations, distances and times. Never add bus numbers, lines, stations, fares or timings that are not in it. Distances to stations are straight-line distances, not walking distances. Give a short friendly summary (about 6-8 lines): the best option, how to reach the nearest metro/railway station/bus stop, and a taxi alternative. The app shows the full step-by-step route card below your message, so do not repeat every step. If the data says no public-transport route was found, say Google had no bus/train/metro data for this trip and suggest the nearest station and a cab. Taxi fares are shown inside the cab app; never state a fare.
 - If the user wants directions but the starting point is unknown, ask where they are starting from, or tell them to tap the 📍 button to share their current location.
@@ -1005,37 +1006,65 @@ def _location_hints(user_message, intent):
                 hints.add(word)
     return sorted(hints)
 
-def find_official_site(intent, user_message, places, search_results):
-    """Try, in order: links the user pasted, the Google Places website, search results whose domain matches the name."""
+def find_official_site(intent, user_text, places, search_results):
+    """Find and read the institute's own website. Order: links the user pasted (this message or earlier ones), the Places
+    website, search results whose domain looks like the name, guessed domains built from the name (strictly verified),
+    then the top search-result pages themselves (verified by name and locality)."""
     if not SITE_FETCH_ENABLED:
         return None
     name = intent.get("institute_en") or intent.get("institute") or ""
-    candidates, seen = [], set()
-    def add(source, url):
-        host = urllib.parse.urlparse(url).netloc.lower().removeprefix("www.")
-        if host and host not in seen and len(candidates) < 3:
-            seen.add(host)
-            candidates.append((source, url))
-    for u in URL_RE.findall(user_message):
-        add("user", u.rstrip(".,;:!?"))
+    hints = _location_hints(user_text, intent)
+    tried = set()
+    def host_of(url):
+        return urllib.parse.urlparse(url).netloc.lower().removeprefix("www.")
+    def attempt(source, url, strict=False):
+        key = host_of(url) + urllib.parse.urlparse(url).path
+        if not host_of(url) or key in tried:
+            return None
+        tried.add(key)
+        info = read_site(url, name, hints)
+        if not info:
+            return None
+        if source != "user":
+            # Not given by the user: it must visibly be this institute.
+            if info["name_ok"] is not True or info["loc_ok"] is False or (strict and info["loc_ok"] is not True):
+                return None
+        info["source"] = source
+        return info
+    for u in list(dict.fromkeys(x.rstrip(".,;:!?") for x in URL_RE.findall(user_text)))[:3]:
+        info = attempt("user", u)
+        if info:
+            return info
     for p in places[:1]:
         if p.get("website"):
-            add("places", p["website"])
+            info = attempt("places", p["website"])
+            if info:
+                return info
     tokens = [t for t in _name_tokens(name) if len(t) >= 5]
     for r in search_results:
         parsed = urllib.parse.urlparse(r["url"])
         domain = re.sub(r"[^a-z0-9]", "", (parsed.hostname or "").lower())
         if tokens and any(t in domain for t in tokens):
-            add("search", f"{parsed.scheme}://{parsed.netloc}/")
-    hints = _location_hints(user_message, intent)
-    for source, url in candidates:
-        info = read_site(url, name, hints)
-        if not info:
-            continue
-        if source == "search" and (info["name_ok"] is not True or info["loc_ok"] is False):
-            continue  # a similarly named site that does not match this institute
-        info["source"] = source
-        return info
+            info = attempt("search", f"{parsed.scheme}://{parsed.netloc}/")
+            if info:
+                return info
+    words = [w for w in re.findall(r"[a-z0-9]+", name.lower()) if len(w) > 2 and w not in NAME_STOPWORDS]
+    stems = []
+    if words:
+        stems.append("".join(words))
+        if len(words[0]) >= 5:
+            stems.append(words[0])
+    guesses = [f"https://{stem}.{tld}/" for stem in dict.fromkeys(stems) if len(stem) >= 5 for tld in ("in", "com", "org", "co.in", "net")]
+    if guesses:
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            results = list(pool.map(lambda u: attempt("guess", u, strict=True), guesses))
+        for info in results:
+            if info:
+                return info
+    for r in search_results[:3]:
+        info = attempt("page", r["url"])
+        if info:
+            return info
     return None
 
 def site_block(info, wants_details):
@@ -1110,6 +1139,8 @@ def chat():
     search_results, places = [], []
     if intent["needs_lookup"]:
         queries = list(intent["web_queries"])
+        if intent["wants_details"] and (intent["institute_en"] or intent["institute"]):
+            queries.insert(0, f"{intent['institute_en'] or intent['institute']} {intent['locality'] or intent['district']} official website courses".strip())
         if intent["wants_reviews"] and (intent["institute_en"] or intent["institute"]):
             where = intent["locality"] or intent["district"]
             queries.append(f"{intent['institute_en'] or intent['institute']} {where} reviews".strip())
@@ -1122,7 +1153,8 @@ def chat():
     # 2b) Official website of the institute (its own claims): pasted link, Places website, or a matching search result.
     site = None
     if intent["needs_lookup"] and (intent["wants_details"] or URL_RE.search(user_message)) and (intent["institute"] or intent["institute_en"] or URL_RE.search(user_message)):
-        site = find_official_site(intent, user_message, places, search_results)
+        user_urls_text = user_message + " " + " ".join(m["content"] for m in history if m["role"] == "user")
+        site = find_official_site(intent, user_urls_text, places, search_results)
 
     # 3) Route guide (only when the user asked how to get there).
     route_guide, route_status = None, None
