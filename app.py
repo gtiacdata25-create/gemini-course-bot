@@ -67,6 +67,8 @@ CORE TASKS:
 - If "Official website excerpts" are provided, you MUST use them: list the courses, programmes, contact details and any other facts they contain (marked "the institute says"), and never say that no source was found. Only say a detail (fee, duration, affiliation) is missing when the excerpts really lack it. Search result snippets that mention the institute may be used the same way, labelled as web mentions.
 - If "Third-party web pages" are provided, use their facts too (courses, fees, contact, ratings if stated), labelled as from that web page and as possibly outdated; official-site facts take priority.
 - STRICT SOURCING: every duration, eligibility rule, fee, approval/affiliation, rating, phone number or course description you write must appear literally in the excerpts, snippets or map data you were given. Do NOT fill gaps from general knowledge (for example typical course lengths such as '2 years' or '12th pass'). If it is not in the excerpts, leave that row or column out, or write 'not stated'. Never write 'the institute says' for something that came only from a search snippet; call that 'a web snippet says'. Never expand an abbreviation (for example CMS & ED) unless the excerpts expand it themselves. ISO or MSME listings are not education-board recognition; say so if they are the only credentials mentioned. Do not give an NCTE, board or council approval unless the excerpt names it for that specific course.
+- Do NOT add a 'how to get there' section, nearest stations, distances, bus or taxi advice unless 'Route data' is provided. Do not end with assurances such as 'all information was taken directly from the sources'. Never output citation markers like 【1†L1-L3】; name the source in plain words instead.
+- Certificates from private skill bodies, NGOs or trusts (for example Bharat Sevak Samaj, World Skill Council, ISO or MSME listings) are not the same as recognition by a university, NCTE, a state board or a professional council. Report them as the institute's claims and tell the user which regulator to check for the course type.
 - Lead with what you found. Do not write a list of negatives like 'no information found' or 'not mentioned'. Put anything missing in ONE short closing line (for example: fees and recognition are not stated, ask the institute for them in writing), and never say no source was found when sources are present.
 - When details are missing, say exactly what was found, what was not found, and what to ask the institute (which board or university gives the certificate, total fee in writing, batch size, who teaches, placement record), instead of ending with only "not available".
 - If "Route data" is provided, it is the ONLY source for bus, train, metro and tram lines, stops, stations, distances and times. Never add bus numbers, lines, stations, fares or timings that are not in it. Distances to stations are straight-line distances, not walking distances. Give a short friendly summary (about 6-8 lines): the best option, how to reach the nearest metro/railway station/bus stop, and a taxi alternative. The app shows the full step-by-step route card below your message, so do not repeat every step. If the data says no public-transport route was found, say Google had no bus/train/metro data for this trip and suggest the nearest station and a cab. Taxi fares are shown inside the cab app; never state a fare.
@@ -247,7 +249,11 @@ def places_search(query, language="bn"):
         return None
 
 def _result_relevant(name, r):
-    return _name_matches(name, f"{r['title']} {r['url']} {r['snippet']}")
+    """Stricter than _name_matches: a result about 'Global Credit Union' must not count for 'Global Technical Institute'."""
+    matched, total = name_match_score(name, f"{r['title']} {r['url']} {r['snippet']}", strict=True)
+    if total == 0:
+        return False
+    return matched >= total if total <= 2 else matched >= -(-total * 3 // 5)
 
 def web_search_multi(queries, limit=8, name=""):
     """Run up to three free web searches in parallel and merge the results. If none of them mentions the institute,
@@ -703,12 +709,31 @@ NAME_STOPWORDS = {"the", "and", "of", "for", "institute", "institution", "colleg
 def _name_tokens(text):
     return {t for t in re.findall(r"[a-z0-9]+", (text or "").lower()) if len(t) > 2 and t not in NAME_STOPWORDS}
 
-def _name_matches(wanted, found):
-    """True when most distinctive words of the wanted institute name appear in the found place's name."""
-    want = _name_tokens(wanted)
+def _relevance_tokens(text):
+    return {t for t in re.findall(r"[a-z0-9]+", (text or "").lower()) if len(t) > 2 and t not in {"the", "and", "for", "its"}}
+
+def name_match_score(wanted, found, strict=False):
+    """(matched, total) distinctive words of the wanted institute name found in the text. Tolerates spacing differences
+    ('Hiralalpaul' vs 'Hiralal Paul') and small spelling slips ('Gloobal' vs 'Global')."""
+    import difflib
+    tokenize = _relevance_tokens if strict else _name_tokens  # strict: generic words (institute, technical) count too
+    want = tokenize(wanted)
     if not want:
-        return False
-    return len(want & _name_tokens(found)) * 2 >= len(want)
+        return 0, 0
+    found_tokens = tokenize(found)
+    compact = re.sub(r"[^a-z0-9]", "", (found or "").lower()[:20000])
+    matched = 0
+    for w in want:
+        if w in found_tokens or (len(w) >= 5 and w in compact):
+            matched += 1
+        elif len(w) >= 5 and any(abs(len(w) - len(t)) <= 2 and difflib.SequenceMatcher(None, w, t).ratio() >= 0.82 for t in list(found_tokens)[:400]):
+            matched += 1
+    return matched, len(want)
+
+def _name_matches(wanted, found):
+    """True when most distinctive words of the wanted institute name appear in the found text."""
+    matched, total = name_match_score(wanted, found)
+    return total > 0 and matched * 2 >= total
 
 def _coord_maps_url(lat, lng):
     return f"https://www.google.com/maps/search/?api=1&query={lat},{lng}"
