@@ -60,3 +60,6 @@ If the new deployment fails, use GitHub's commit history to revert to the previo
 - Institute names are kept exactly as typed (no transliteration).
 - Place cards get a "⭐ See reviews on Google Maps" link (no key needed). The bot never invents ratings or review text.
 - Answers follow an institute-profile layout and name the regulator/board to verify for regulated courses.
+
+## Optional: Serper (free, no card) for Google Maps data
+Set `SERPER_API_KEY` (from serper.dev, 2,500 free queries at sign-up) to get, via Google search data: the institute's website, phone, star rating and review count, plus Google web results with the knowledge-panel website. Each question uses about 2 credits (cached for an hour). If the key is missing or credits run out, the bot falls back to OpenStreetMap + DuckDuckGo/Bing automatically. The key is read only from the environment variable.
