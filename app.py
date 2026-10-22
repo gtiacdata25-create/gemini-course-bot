@@ -261,6 +261,10 @@ def web_search_multi(queries, limit=8, name=""):
     queries = [q for q in queries if q][:3]
     if not queries:
         return []
+    if name and _name_tokens(name) and (provider_available("serper") or provider_available("tavily")):
+        fast = quota_search(queries[0], limit)  # one fast call instead of waiting for scrapers that are often blocked
+        if any(_result_relevant(name, r) for r in fast):
+            return fast
     with ThreadPoolExecutor(max_workers=len(queries)) as pool:
         lists = list(pool.map(live_web_search, queries))
     merged, seen = [], set()
@@ -814,13 +818,10 @@ def find_places(intent, language):
     found = places_search(query, language)
     if found:
         return found
-    osm = osm_find_place(intent, language)
-    exact = bool(osm) and osm[0].get("match") == "exact"
-    if not exact or intent.get("wants_details") or intent.get("wants_reviews"):
-        found = serper_places(intent, language)  # website, phone and rating; skipped when no credits are left
-        if found:
-            return found
-    return osm
+    found = serper_places(intent, language)  # Google Maps listing: website, phone, rating; skipped when no credits are left
+    if found:
+        return found
+    return osm_find_place(intent, language)
 
 def find_origin(text, language):
     found = places_search(text, language)
@@ -1430,8 +1431,8 @@ def verify_answer(draft, evidence):
         app.logger.warning("Answer verification skipped", exc_info=False)
     return draft
 
-STAGE2_BUDGET_SECONDS = 14
-STAGE3_BUDGET_SECONDS = 24
+STAGE2_BUDGET_SECONDS = 12
+STAGE3_BUDGET_SECONDS = 20
 
 def _done_result(future):
     """Result of a finished future, else None (still running past its budget, or it failed)."""
@@ -1464,6 +1465,42 @@ def home():
 @app.get("/health")
 def health():
     return jsonify({"status": "ok", "model_configured": bool(GROQ_API_KEY), "places_configured": bool(GOOGLE_PLACES_API_KEY), "places_provider": "google" if google_ok() else ("serper" if SERPER_API_KEY else "openstreetmap"), "serper_configured": bool(SERPER_API_KEY), "providers": {n: {"configured": bool({"serper": SERPER_API_KEY, "tavily": TAVILY_API_KEY}[n]), "available": provider_available(n), "calls_since_start": PROVIDER_USED[n]} for n in ("serper", "tavily")}, "memory": {"entries": STORE.size(), "durable": bool(UPSTASH_URL and UPSTASH_TOKEN)}, "routes_enabled": ROUTES_ENABLED})
+
+@app.post("/translate")
+def translate():
+    """Translate earlier bot answers when the user switches language, without searching again."""
+    if not request.is_json:
+        return jsonify({"error": "Please send JSON."}), 415
+    payload = request.get_json(silent=True) or {}
+    language = str(payload.get("language", "")).lower().strip()
+    texts = payload.get("texts")
+    if language not in LANGUAGE_NAMES or not isinstance(texts, list) or not (1 <= len(texts) <= 4) \
+            or not all(isinstance(t, str) and t.strip() for t in texts):
+        return jsonify({"error": "Invalid request."}), 400
+    texts = [t[:6000] for t in texts]
+    if not client:
+        return jsonify({"error": "not configured"}), 503
+    system = ("You are a precise translator. Translate each item of the JSON array into " + LANGUAGE_NAMES[language] +
+              ". Keep the markdown structure (tables, lists, bold), every URL, phone number, number, proper name and institute name unchanged. "
+              "Do not add, remove, explain or soften any information. Return ONLY a JSON object of the form {\"translations\": [...]} "
+              "with exactly as many strings as the input.")
+    try:
+        kwargs = {}
+        if "gpt-oss" in GROQ_MODEL:
+            kwargs["extra_body"] = {"reasoning_effort": "low"}
+        completion = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": json.dumps(texts, ensure_ascii=False)}],
+            temperature=0, max_tokens=6000, **kwargs)
+        raw = (completion.choices[0].message.content or "").strip()
+        start, end = raw.find("{"), raw.rfind("}")
+        data = json.loads(raw[start:end + 1])
+        out = data.get("translations")
+        if isinstance(out, list) and len(out) == len(texts) and all(isinstance(x, str) and x.strip() for x in out):
+            return jsonify({"translations": out})
+    except Exception:
+        app.logger.warning("Translation failed", exc_info=False)
+    return jsonify({"error": "Translation failed."}), 502
 
 @app.post("/chat")
 def chat():
@@ -1626,7 +1663,7 @@ def chat():
                 "क्षमा करें, अभी उत्तर तैयार नहीं हो पाया।")
 
         # Second pass: remove claims the evidence does not support (only when there was real evidence and time is left).
-        if intent["needs_lookup"] and (site or web_pages or intent["wants_details"]) and (time.time() - t_start) < 60:
+        if intent["needs_lookup"] and (site or web_pages) and (time.time() - t_start) < 55:
             evidence = "\n\n".join(x for x in (maps_block, route_block, site_text, search_context) if x)
             answer = verify_answer(answer, evidence)
 
