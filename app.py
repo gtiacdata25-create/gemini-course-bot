@@ -245,8 +245,12 @@ def places_search(query, language="bn"):
         app.logger.warning("Places API unavailable", exc_info=False)
         return None
 
-def web_search_multi(queries, limit=8):
-    """Run up to three web searches in parallel and merge the results without duplicates."""
+def _result_relevant(name, r):
+    return _name_matches(name, f"{r['title']} {r['url']} {r['snippet']}")
+
+def web_search_multi(queries, limit=8, name=""):
+    """Run up to three free web searches in parallel and merge the results. If none of them mentions the institute,
+    escalate once to a credit-limited provider (Serper, then Tavily) so credits are spent only when the free search fails."""
     queries = [q for q in queries if q][:3]
     if not queries:
         return []
@@ -258,6 +262,10 @@ def web_search_multi(queries, limit=8):
             if i < len(l) and l[i]["url"] not in seen:
                 seen.add(l[i]["url"])
                 merged.append(l[i])
+    if name and _name_tokens(name) and not any(_result_relevant(name, r) for r in merged):
+        extra = quota_search(queries[0], limit)
+        seen_urls = {r["url"] for r in extra}
+        merged = extra + [r for r in merged if r["url"] not in seen_urls]
     return merged[:limit]
 
 def places_context(places):
@@ -306,16 +314,33 @@ def _bing_url(href):
         pass
     return href
 
+def provider_available(name):
+    key = {"serper": SERPER_API_KEY, "tavily": TAVILY_API_KEY}.get(name, "")
+    return bool(key) and PROVIDER_DOWN_UNTIL.get(name, 0) < time.time()
+
+def _provider_response(name, r):
+    """Free-tier safety: when a provider refuses (credits finished, bad key, rate limit) stop using it for a while.
+    Free accounts without a card cannot be charged, so the bot simply moves on to the next provider."""
+    code = r.status_code
+    if code in (401, 402, 403):
+        PROVIDER_DOWN_UNTIL[name] = time.time() + 12 * 3600
+    elif code == 400:
+        PROVIDER_DOWN_UNTIL[name] = time.time() + 3600
+    elif code == 429:
+        PROVIDER_DOWN_UNTIL[name] = time.time() + 600
+    if code >= 400:
+        app.logger.warning("%s refused the request (HTTP %s); skipping it for a while", name, code)
+    r.raise_for_status()
+
 def _serper_post(endpoint, payload):
     r = requests.post(f"https://google.serper.dev/{endpoint}", json=payload,
                       headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"}, timeout=SERPER_TIMEOUT_SECONDS)
-    r.raise_for_status()
+    _provider_response("serper", r)
+    PROVIDER_USED["serper"] += 1
     return r.json()
 
 def _serper_search(query):
-    """Google results via Serper (free tier, key optional). Includes the Google knowledge-panel website when present."""
-    if not SERPER_API_KEY:
-        raise RuntimeError("no serper key")
+    """Google results via Serper (free credits, no card). Includes the Google knowledge-panel website when present."""
     data = _serper_post("search", {"q": query, "gl": "in", "hl": "en", "num": 8})
     out = []
     kg = data.get("knowledgeGraph") or {}
@@ -326,10 +351,44 @@ def _serper_search(query):
             out.append((str(item.get("title") or ""), str(item["link"]), str(item.get("snippet") or "")))
     return out
 
+def _tavily_search(query):
+    """Second free provider (monthly free credits, no card)."""
+    r = requests.post("https://api.tavily.com/search",
+                      json={"query": query, "search_depth": "basic", "max_results": 8, "include_answer": False},
+                      headers={"Authorization": f"Bearer {TAVILY_API_KEY}", "Content-Type": "application/json"}, timeout=SERPER_TIMEOUT_SECONDS)
+    _provider_response("tavily", r)
+    PROVIDER_USED["tavily"] += 1
+    return [(str(x.get("title") or ""), str(x["url"]), str(x.get("content") or "")[:700])
+            for x in (r.json().get("results") or []) if isinstance(x, dict) and x.get("url")]
+
+def quota_search(query, limit=8):
+    """Credit-limited search providers, tried in order. Skips any provider whose free credits are finished."""
+    for name, fn in (("serper", _serper_search), ("tavily", _tavily_search)):
+        if not provider_available(name):
+            continue
+        try:
+            raw = fn(query)
+        except Exception as exc:
+            app.logger.warning("%s search failed: %s", name, type(exc).__name__)
+            continue
+        results, seen = [], set()
+        for title, target, snippet in raw:
+            host = urllib.parse.urlparse(target).netloc.lower()
+            if not target.startswith(("https://", "http://")) or target in seen or any(x in host for x in ("facebook.com", "instagram.com")):
+                continue
+            seen.add(target)
+            results.append({"title": title[:240], "url": target[:1000], "snippet": snippet[:700]})
+            if len(results) >= limit:
+                break
+        if results:
+            SEARCH_STATS["last_backend"] = name
+            return results
+    return []
+
 def serper_places(intent, language):
     """Google Maps listing data via Serper: website, phone, rating, review count. Returns [] when unavailable."""
     query = intent.get("place_query")
-    if not SERPER_API_KEY or not query:
+    if not provider_available("serper") or not query:
         return []
     cached = SERPER_CACHE.get(query.lower())
     if cached is not None:
@@ -408,7 +467,7 @@ def live_web_search(query, limit=6):
     if cached is not None:
         return cached
     started = time.time()
-    for backend in ((_serper_search,) if SERPER_API_KEY else ()) + (_ddg_html, _ddg_lite, _bing):
+    for backend in (_ddg_html, _ddg_lite, _bing):
         if time.time() - started > 9:  # keep the whole fallback chain short
             break
         try:
@@ -728,10 +787,13 @@ def find_places(intent, language):
     found = places_search(query, language)
     if found:
         return found
-    found = serper_places(intent, language)
-    if found:
-        return found
-    return osm_find_place(intent, language)
+    osm = osm_find_place(intent, language)
+    exact = bool(osm) and osm[0].get("match") == "exact"
+    if not exact or intent.get("wants_details") or intent.get("wants_reviews"):
+        found = serper_places(intent, language)  # website, phone and rating; skipped when no credits are left
+        if found:
+            return found
+    return osm
 
 def find_origin(text, language):
     found = places_search(text, language)
@@ -961,6 +1023,9 @@ import socket
 from urllib import robotparser
 
 SERPER_API_KEY = os.environ.get("SERPER_API_KEY", "").strip()
+TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "").strip()
+PROVIDER_DOWN_UNTIL = {}          # provider name -> time until which it is skipped (credits finished / key refused)
+PROVIDER_USED = {"serper": 0, "tavily": 0}
 SERPER_TIMEOUT_SECONDS = 8
 SERPER_CACHE = TTLCache(ttl=60 * 60, maxsize=128)
 SITE_FETCH_ENABLED = os.environ.get("SITE_FETCH_ENABLED", "1").strip() != "0"
@@ -1220,6 +1285,88 @@ REVIEWS_NOTE = ("REVIEWS: you have no review TEXT. State a Google star rating an
                 "talk to current or former students, check recognition with the regulator.")
 
 
+# ---------------------------------------------------------------------------
+# Institute memory. Public facts that were already fetched (map place, website text, relevant web results) are kept
+# for 30 days so the next person asking about the same institute costs no search credits.
+# Never stored: user messages, user-pasted links, routes or locations.
+# Local file storage is wiped when Render redeploys or restarts; set UPSTASH_REDIS_REST_URL and
+# UPSTASH_REDIS_REST_TOKEN (free, no card) to keep it permanently.
+# ---------------------------------------------------------------------------
+STORE_TTL_SECONDS = 30 * 24 * 3600
+STORE_MAX_ENTRIES = 300
+STORE_MAX_ENTRY_BYTES = 60_000
+STORE_FILE = os.path.join(os.environ.get("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")), "institute_memory.json")
+UPSTASH_URL = os.environ.get("UPSTASH_REDIS_REST_URL", "").strip().rstrip("/")
+UPSTASH_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "").strip()
+
+class InstituteStore:
+    def __init__(self):
+        self._mem, self._lock = {}, threading.Lock()
+        try:
+            with open(STORE_FILE, encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data, dict):
+                self._mem = data
+        except Exception:
+            pass
+
+    def _remote(self, command):
+        try:
+            r = requests.post(UPSTASH_URL, json=command, headers={"Authorization": f"Bearer {UPSTASH_TOKEN}"}, timeout=3)
+            return r.json().get("result") if r.status_code == 200 else None
+        except Exception:
+            return None
+
+    def get(self, key):
+        with self._lock:
+            entry = self._mem.get(key)
+        if entry and time.time() - entry.get("t", 0) < STORE_TTL_SECONDS:
+            return entry
+        if UPSTASH_URL and UPSTASH_TOKEN:
+            raw = self._remote(["GET", "inst:" + key])
+            try:
+                entry = json.loads(raw) if raw else None
+            except ValueError:
+                entry = None
+            if isinstance(entry, dict) and time.time() - entry.get("t", 0) < STORE_TTL_SECONDS:
+                with self._lock:
+                    self._mem[key] = entry
+                return entry
+        return None
+
+    def set(self, key, entry):
+        entry = dict(entry, t=time.time())
+        blob = json.dumps(entry, ensure_ascii=False)
+        if len(blob.encode("utf-8")) > STORE_MAX_ENTRY_BYTES:
+            return
+        with self._lock:
+            self._mem[key] = entry
+            while len(self._mem) > STORE_MAX_ENTRIES:
+                self._mem.pop(min(self._mem, key=lambda k: self._mem[k].get("t", 0)))
+            try:
+                os.makedirs(os.path.dirname(STORE_FILE), exist_ok=True)
+                tmp = STORE_FILE + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    json.dump(self._mem, fh, ensure_ascii=False)
+                os.replace(tmp, STORE_FILE)
+            except Exception:
+                pass  # memory still works without the file
+        if UPSTASH_URL and UPSTASH_TOKEN:
+            self._remote(["SET", "inst:" + key, blob, "EX", STORE_TTL_SECONDS])
+
+    def size(self):
+        with self._lock:
+            return len(self._mem)
+
+STORE = InstituteStore()
+
+def store_key_for(intent):
+    name = _name_tokens(intent.get("institute_en") or intent.get("institute") or "")
+    if not name:
+        return None
+    where = {w for field in ("locality", "district") for w in re.findall(r"[a-z0-9]+", (intent.get(field) or "").lower()) if len(w) >= 4}
+    return "-".join(sorted(name)) + "|" + "-".join(sorted(where))
+
 STAGE2_BUDGET_SECONDS = 14
 STAGE3_BUDGET_SECONDS = 24
 
@@ -1253,7 +1400,7 @@ def home():
 
 @app.get("/health")
 def health():
-    return jsonify({"status": "ok", "model_configured": bool(GROQ_API_KEY), "places_configured": bool(GOOGLE_PLACES_API_KEY), "places_provider": "google" if google_ok() else ("serper" if SERPER_API_KEY else "openstreetmap"), "serper_configured": bool(SERPER_API_KEY), "routes_enabled": ROUTES_ENABLED})
+    return jsonify({"status": "ok", "model_configured": bool(GROQ_API_KEY), "places_configured": bool(GOOGLE_PLACES_API_KEY), "places_provider": "google" if google_ok() else ("serper" if SERPER_API_KEY else "openstreetmap"), "serper_configured": bool(SERPER_API_KEY), "providers": {n: {"configured": bool({"serper": SERPER_API_KEY, "tavily": TAVILY_API_KEY}[n]), "available": provider_available(n), "calls_since_start": PROVIDER_USED[n]} for n in ("serper", "tavily")}, "memory": {"entries": STORE.size(), "durable": bool(UPSTASH_URL and UPSTASH_TOKEN)}, "routes_enabled": ROUTES_ENABLED})
 
 @app.post("/chat")
 def chat():
@@ -1284,9 +1431,16 @@ def chat():
     # 1) Split the message into institute / locality / clean queries (also resolves follow-ups).
     intent = extract_intent(user_message, history)
 
-    # 2) Google Places and web search run in parallel.
+    # 2) Google Places and web search run in parallel (skipped when this institute is already in memory).
     search_results, places = [], []
-    if intent["needs_lookup"]:
+    store_key = store_key_for(intent) if intent["needs_lookup"] else None
+    memory = STORE.get(store_key) if store_key else None
+    needs_details = intent["wants_details"] or intent["wants_reviews"]
+    from_memory = bool(memory) and (memory.get("details") or not needs_details)
+    if from_memory:
+        places = memory.get("places") or []
+        search_results = memory.get("search_results") or []
+    elif intent["needs_lookup"]:
         queries = list(intent["web_queries"])
         if intent["wants_details"] and (intent["institute_en"] or intent["institute"]):
             queries.insert(0, f"{intent['institute_en'] or intent['institute']} {intent['locality'] or intent['district']} official website courses".strip())
@@ -1295,7 +1449,7 @@ def chat():
             queries.append(f"{intent['institute_en'] or intent['institute']} {where} reviews".strip())
         pool = ThreadPoolExecutor(max_workers=2)
         f_places = pool.submit(find_places, intent, language)
-        f_web = pool.submit(web_search_multi, queries)
+        f_web = pool.submit(web_search_multi, queries, 8, intent["institute_en"] or intent["institute"])
         futures_wait([f_places, f_web], timeout=STAGE2_BUDGET_SECONDS)
         pool.shutdown(wait=False)  # never block the reply on a slow service
         places = _done_result(f_places) or []
@@ -1305,7 +1459,9 @@ def chat():
     user_urls_text = user_message + " " + " ".join(m["content"] for m in history if m["role"] == "user")
     site, web_pages = None, []
     route_guide, route_status = None, None
-    want_site = intent["needs_lookup"] and (intent["wants_details"] or URL_RE.search(user_message)) and bool(intent["institute"] or intent["institute_en"] or URL_RE.search(user_message))
+    site_in_memory = from_memory and bool(memory.get("site_checked")) and not URL_RE.search(user_message)
+    want_site = (intent["needs_lookup"] and (intent["wants_details"] or URL_RE.search(user_message)) and bool(intent["institute"] or intent["institute_en"] or URL_RE.search(user_message))
+                 and not site_in_memory)
     want_route = intent["needs_lookup"] and intent["wants_route"]
 
     def site_task():
@@ -1318,6 +1474,8 @@ def chat():
     f_route = pool.submit(build_route_guide, intent, places, user_loc, language) if want_route else None
     futures_wait([f for f in (f_site, f_route) if f], timeout=STAGE3_BUDGET_SECONDS)
     pool.shutdown(wait=False)
+    if site_in_memory:
+        site, web_pages = memory.get("site"), memory.get("web_pages") or []
     if f_site is not None:
         got = _done_result(f_site)
         if got:
@@ -1328,6 +1486,20 @@ def chat():
             route_guide, route_status = got
         else:
             route_status = "timeout"
+
+    # Remember public facts about this institute for the next person (never user links, locations or routes).
+    try:
+        if store_key and not from_memory or (store_key and from_memory and not memory.get("details") and needs_details):
+            name_for_check = intent["institute_en"] or intent["institute"]
+            relevant = [r for r in search_results if _result_relevant(name_for_check, r)] if _name_tokens(name_for_check) else []
+            safe_site = site if (site and site.get("source") != "user") else None
+            good_place = bool(places) and places[0].get("match") == "exact"
+            if good_place or safe_site or web_pages or relevant:
+                STORE.set(store_key, {"places": places if good_place else [], "search_results": relevant[:8], "details": bool(needs_details),
+                                      "site": safe_site, "site_checked": bool(safe_site),
+                                      "web_pages": web_pages if web_pages else []})
+    except Exception:
+        app.logger.warning("Could not save institute memory", exc_info=False)
 
     search_context = "\n".join(
         f"[{i}] TITLE: {r['title']}\nURL: {r['url']}\nSNIPPET: {r['snippet']}"
@@ -1399,7 +1571,7 @@ def chat():
             "response": answer,
             "language": language,
             "sources": sources_out,
-            "diag": {"search_results": len(search_results), "search_backend": SEARCH_STATS["last_backend"], "search_error": SEARCH_STATS["last_error"] if not search_results else "", "official_site": bool(site), "web_pages": len(web_pages)},
+            "diag": {"search_results": len(search_results), "search_backend": SEARCH_STATS["last_backend"], "search_error": SEARCH_STATS["last_error"] if not search_results else "", "official_site": bool(site), "web_pages": len(web_pages), "from_memory": from_memory},
             "site": ({"url": site["url"], "pages": site["pages"], "name_ok": site["name_ok"], "loc_ok": site["loc_ok"]} if site else None),
             "places": places,
             "route": route_guide,
