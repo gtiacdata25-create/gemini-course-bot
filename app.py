@@ -4,7 +4,7 @@ import re
 import threading
 import time
 import urllib.parse
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait as futures_wait
 from html import unescape
 
 import requests
@@ -38,7 +38,7 @@ EXTRACT_MODEL = os.environ.get("EXTRACT_MODEL", GROQ_MODEL).strip()
 
 MAX_HISTORY_MESSAGES = 6
 MAX_MESSAGE_CHARS = 4000
-SEARCH_TIMEOUT_SECONDS = 8
+SEARCH_TIMEOUT_SECONDS = 5
 USER_AGENT = "Mozilla/5.0 (compatible; CourseFinderBot/1.0; +https://github.com/gtiacdata25-create/gemini-course-bot)"
 
 LANGUAGE_NAMES = {
@@ -66,6 +66,7 @@ CORE TASKS:
 - INSTITUTE PROFILE: when the user asks about an institute, organise the answer as short sections: Location and map result; Courses; Eligibility, duration and fees; Affiliation/recognition; Placement; Reviews; Contact; and how to get there only if asked. Mark what comes from the institute's own website as "the institute says". Fees, placement and recognition claims are claims until confirmed by a regulator or board; ISO or MSME listings are not education-board recognition. Do not state a fee, duration or placement figure that is not in the excerpts. For regulated fields (teacher training such as D.El.Ed/B.Ed, nursing, pharmacy, medical/paramedical, university distance programmes, vocational skill courses) tell the user which kind of regulator or board to check (for example NCTE or the state primary education board, the nursing or pharmacy council, UGC for universities, the state skill-development body), and never promise a licence or a job.
 - If "Official website excerpts" are provided, you MUST use them: list the courses, programmes, contact details and any other facts they contain (marked "the institute says"), and never say that no source was found. Only say a detail (fee, duration, affiliation) is missing when the excerpts really lack it. Search result snippets that mention the institute may be used the same way, labelled as web mentions.
 - If "Third-party web pages" are provided, use their facts too (courses, fees, contact, ratings if stated), labelled as from that web page and as possibly outdated; official-site facts take priority.
+- Lead with what you found. Do not write a list of negatives like 'no information found' or 'not mentioned'. Put anything missing in ONE short closing line (for example: fees and recognition are not stated, ask the institute for them in writing), and never say no source was found when sources are present.
 - When details are missing, say exactly what was found, what was not found, and what to ask the institute (which board or university gives the certificate, total fee in writing, batch size, who teaches, placement record), instead of ending with only "not available".
 - If "Route data" is provided, it is the ONLY source for bus, train, metro and tram lines, stops, stations, distances and times. Never add bus numbers, lines, stations, fares or timings that are not in it. Distances to stations are straight-line distances, not walking distances. Give a short friendly summary (about 6-8 lines): the best option, how to reach the nearest metro/railway station/bus stop, and a taxi alternative. The app shows the full step-by-step route card below your message, so do not repeat every step. If the data says no public-transport route was found, say Google had no bus/train/metro data for this trip and suggest the nearest station and a cab. Taxi fares are shown inside the cab app; never state a fare.
 - If the user wants directions but the starting point is unknown, ask where they are starting from, or tell them to tap the 📍 button to share their current location.
@@ -267,6 +268,8 @@ def places_context(places):
         extra = ""
         if p.get("phone"): extra += f"\n   PHONE: {p['phone']}"
         if p.get("website"): extra += f"\n   WEBSITE: {p['website']}"
+        if p.get("rating") is not None: extra += f"\n   GOOGLE RATING: {p['rating']} out of 5" + (f" from {p['rating_count']} reviews" if p.get("rating_count") else "") + " (star rating only; review text is not available)"
+        if p.get("source") == "serper": extra += "\n   SOURCE: Google Maps listing (via search data)"
         if p.get("status") and p["status"] != "OPERATIONAL": extra += f"\n   STATUS: {p['status']}"
         if p.get("source") == "osm": extra += "\n   SOURCE: OpenStreetMap (community map data, may be incomplete or outdated)"
         if p.get("match") == "area": extra += "\n   MATCH: AREA ONLY. The institute itself was not found; this is the locality. Do not present this address as the institute's address."
@@ -302,6 +305,64 @@ def _bing_url(href):
     except Exception:
         pass
     return href
+
+def _serper_post(endpoint, payload):
+    r = requests.post(f"https://google.serper.dev/{endpoint}", json=payload,
+                      headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"}, timeout=SERPER_TIMEOUT_SECONDS)
+    r.raise_for_status()
+    return r.json()
+
+def _serper_search(query):
+    """Google results via Serper (free tier, key optional). Includes the Google knowledge-panel website when present."""
+    if not SERPER_API_KEY:
+        raise RuntimeError("no serper key")
+    data = _serper_post("search", {"q": query, "gl": "in", "hl": "en", "num": 8})
+    out = []
+    kg = data.get("knowledgeGraph") or {}
+    if isinstance(kg.get("website"), str) and kg["website"].startswith(("http://", "https://")):
+        out.append((f"{kg.get('title', 'Google knowledge panel')} - website", kg["website"], str(kg.get("description") or "")))
+    for item in data.get("organic") or []:
+        if isinstance(item, dict) and item.get("link"):
+            out.append((str(item.get("title") or ""), str(item["link"]), str(item.get("snippet") or "")))
+    return out
+
+def serper_places(intent, language):
+    """Google Maps listing data via Serper: website, phone, rating, review count. Returns [] when unavailable."""
+    query = intent.get("place_query")
+    if not SERPER_API_KEY or not query:
+        return []
+    cached = SERPER_CACHE.get(query.lower())
+    if cached is not None:
+        return cached
+    try:
+        data = _serper_post("places", {"q": query, "gl": "in", "hl": "bn" if language == "bn" else "en"})
+    except Exception as exc:
+        app.logger.warning("Serper places failed: %s", type(exc).__name__)
+        return []
+    name = intent.get("institute_en") or intent.get("institute") or ""
+    want = _name_tokens(name)
+    out = []
+    for item in (data.get("places") or [])[:10]:
+        if not isinstance(item, dict) or not item.get("title"):
+            continue
+        title = str(item["title"])
+        if want and not _name_matches(name, title):
+            continue
+        lat, lng = item.get("latitude"), item.get("longitude")
+        cid = str(item.get("cid") or "")
+        maps_url = f"https://www.google.com/maps?cid={cid}" if cid.isdigit() else (_coord_maps_url(lat, lng) if lat and lng else "")
+        website = str(item.get("website") or "")
+        rating = item.get("rating") if isinstance(item.get("rating"), (int, float)) else None
+        count = item.get("ratingCount") if isinstance(item.get("ratingCount"), int) else None
+        out.append({"name": title, "address": str(item.get("address") or ""), "lat": lat, "lng": lng, "maps_url": maps_url,
+                    "phone": str(item.get("phoneNumber") or ""), "website": website if website.startswith(("http://", "https://")) else "",
+                    "status": "", "source": "serper", "match": "exact", "rating": rating, "rating_count": count,
+                    "reviews_url": maps_url or maps_search_url(f"{title}, {item.get('address', '')}")})
+        if len(out) >= 3:
+            break
+    if out:
+        SERPER_CACHE.set(query.lower(), out)
+    return out
 
 def _ddg_html(query):
     r = requests.get("https://html.duckduckgo.com/html/", params={"q": query}, headers={"User-Agent": USER_AGENT}, timeout=SEARCH_TIMEOUT_SECONDS)
@@ -346,7 +407,10 @@ def live_web_search(query, limit=6):
     cached = SEARCH_CACHE.get(query.lower())
     if cached is not None:
         return cached
-    for backend in (_ddg_html, _ddg_lite, _bing):
+    started = time.time()
+    for backend in ((_serper_search,) if SERPER_API_KEY else ()) + (_ddg_html, _ddg_lite, _bing):
+        if time.time() - started > 9:  # keep the whole fallback chain short
+            break
         try:
             raw = backend(query)
         except Exception as exc:
@@ -664,6 +728,9 @@ def find_places(intent, language):
     found = places_search(query, language)
     if found:
         return found
+    found = serper_places(intent, language)
+    if found:
+        return found
     return osm_find_place(intent, language)
 
 def find_origin(text, language):
@@ -893,8 +960,11 @@ import ipaddress
 import socket
 from urllib import robotparser
 
+SERPER_API_KEY = os.environ.get("SERPER_API_KEY", "").strip()
+SERPER_TIMEOUT_SECONDS = 8
+SERPER_CACHE = TTLCache(ttl=60 * 60, maxsize=128)
 SITE_FETCH_ENABLED = os.environ.get("SITE_FETCH_ENABLED", "1").strip() != "0"
-SITE_TIMEOUT_SECONDS = 8
+SITE_TIMEOUT_SECONDS = 5
 SITE_MAX_BYTES = 600_000
 SITE_HOME_CHARS = 3500
 SITE_SUBPAGE_CHARS = 2500
@@ -1144,11 +1214,25 @@ def site_block(info, wants_details, web_pages=()):
                 "(you can read it) or the course details from a brochure.")
     return ""
 
-REVIEWS_NOTE = ("REVIEWS: you have NO access to review text or ratings. Do not state ratings, review counts or what reviewers said. "
+REVIEWS_NOTE = ("REVIEWS: you have no review TEXT. State a Google star rating and review count only if a map result above gives GOOGLE RATING; otherwise do not state ratings. Never say what reviewers wrote. "
                 "Point to the Google Maps reviews link in the card, mention any web results only as unverified, and give no verdict "
                 "(never call the institute good, bad, genuine or fake). Suggest how to judge: visit, ask for the brochure and fee receipt, "
                 "talk to current or former students, check recognition with the regulator.")
 
+
+STAGE2_BUDGET_SECONDS = 14
+STAGE3_BUDGET_SECONDS = 24
+
+def _done_result(future):
+    """Result of a finished future, else None (still running past its budget, or it failed)."""
+    if not future.done():
+        app.logger.warning("A lookup exceeded its time budget and was skipped")
+        return None
+    try:
+        return future.result()
+    except Exception:
+        app.logger.warning("A lookup failed", exc_info=False)
+        return None
 
 def clean_history(raw):
     """Validate client-supplied history: only user/assistant text, size-limited."""
@@ -1169,7 +1253,7 @@ def home():
 
 @app.get("/health")
 def health():
-    return jsonify({"status": "ok", "model_configured": bool(GROQ_API_KEY), "places_configured": bool(GOOGLE_PLACES_API_KEY), "places_provider": "google" if google_ok() else "openstreetmap", "routes_enabled": ROUTES_ENABLED})
+    return jsonify({"status": "ok", "model_configured": bool(GROQ_API_KEY), "places_configured": bool(GOOGLE_PLACES_API_KEY), "places_provider": "google" if google_ok() else ("serper" if SERPER_API_KEY else "openstreetmap"), "serper_configured": bool(SERPER_API_KEY), "routes_enabled": ROUTES_ENABLED})
 
 @app.post("/chat")
 def chat():
@@ -1209,25 +1293,41 @@ def chat():
         if intent["wants_reviews"] and (intent["institute_en"] or intent["institute"]):
             where = intent["locality"] or intent["district"]
             queries.append(f"{intent['institute_en'] or intent['institute']} {where} reviews".strip())
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            f_places = pool.submit(find_places, intent, language)
-            f_web = pool.submit(web_search_multi, queries)
-            places = f_places.result() or []
-            search_results = f_web.result() or []
+        pool = ThreadPoolExecutor(max_workers=2)
+        f_places = pool.submit(find_places, intent, language)
+        f_web = pool.submit(web_search_multi, queries)
+        futures_wait([f_places, f_web], timeout=STAGE2_BUDGET_SECONDS)
+        pool.shutdown(wait=False)  # never block the reply on a slow service
+        places = _done_result(f_places) or []
+        search_results = _done_result(f_web) or []
 
-    # 2b) Official website of the institute (its own claims): pasted link, Places website, or a matching search result.
+    # 2b + 3) Official website / web pages and the route guide run in parallel, each with a time budget.
     user_urls_text = user_message + " " + " ".join(m["content"] for m in history if m["role"] == "user")
-    site = None
-    if intent["needs_lookup"] and (intent["wants_details"] or URL_RE.search(user_message)) and (intent["institute"] or intent["institute_en"] or URL_RE.search(user_message)):
-        site = find_official_site(intent, user_urls_text, places, search_results)
-    web_pages = []
-    if intent["needs_lookup"] and intent["wants_details"]:
-        web_pages = read_web_pages(intent, user_urls_text, search_results, site["url"] if site else None)
-
-    # 3) Route guide (only when the user asked how to get there).
+    site, web_pages = None, []
     route_guide, route_status = None, None
-    if intent["needs_lookup"] and intent["wants_route"]:
-        route_guide, route_status = build_route_guide(intent, places, user_loc, language)
+    want_site = intent["needs_lookup"] and (intent["wants_details"] or URL_RE.search(user_message)) and bool(intent["institute"] or intent["institute_en"] or URL_RE.search(user_message))
+    want_route = intent["needs_lookup"] and intent["wants_route"]
+
+    def site_task():
+        found = find_official_site(intent, user_urls_text, places, search_results)
+        pages = read_web_pages(intent, user_urls_text, search_results, found["url"] if found else None) if intent["wants_details"] else []
+        return found, pages
+
+    pool = ThreadPoolExecutor(max_workers=2)
+    f_site = pool.submit(site_task) if want_site else None
+    f_route = pool.submit(build_route_guide, intent, places, user_loc, language) if want_route else None
+    futures_wait([f for f in (f_site, f_route) if f], timeout=STAGE3_BUDGET_SECONDS)
+    pool.shutdown(wait=False)
+    if f_site is not None:
+        got = _done_result(f_site)
+        if got:
+            site, web_pages = got
+    if f_route is not None:
+        got = _done_result(f_route)
+        if got:
+            route_guide, route_status = got
+        else:
+            route_status = "timeout"
 
     search_context = "\n".join(
         f"[{i}] TITLE: {r['title']}\nURL: {r['url']}\nSNIPPET: {r['snippet']}"
@@ -1250,6 +1350,8 @@ def chat():
         route_block = "Route data: the user wants directions but gave no starting point. Ask where they are starting from, or tell them to tap the 📍 button to share their location."
     elif route_status == "no_destination":
         route_block = "Route data: the destination institute could not be located, so no route was computed. Ask for the institute name and area."
+    elif route_status == "timeout":
+        route_block = "Route data: the route lookup took too long and was skipped. Say so briefly and ask the user to repeat the question in a moment; the Google Maps link in the card still works."
     elif route_status == "unavailable":
         route_block = "Route data: the route guide is switched off on this server."
     else:
