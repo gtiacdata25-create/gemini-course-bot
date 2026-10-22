@@ -63,3 +63,9 @@ If the new deployment fails, use GitHub's commit history to revert to the previo
 
 ## Optional: Serper (free, no card) for Google Maps data
 Set `SERPER_API_KEY` (from serper.dev, 2,500 free queries at sign-up) to get, via Google search data: the institute's website, phone, star rating and review count, plus Google web results with the knowledge-panel website. Each question uses about 2 credits (cached for an hour). If the key is missing or credits run out, the bot falls back to OpenStreetMap + DuckDuckGo/Bing automatically. The key is read only from the environment variable.
+
+## v7: institute memory + free-credit rotation
+- **Memory:** public facts already fetched about an institute (map place, website text, relevant web results) are stored for 30 days and reused by everyone, so repeat questions cost no credits. User messages, user-pasted links and locations are never stored. Local file storage is lost on Render redeploy/restart; for permanent memory create a free Upstash Redis database and set `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
+- **Credits are spent only when the free sources fail:** OpenStreetMap and the free web search are tried first. If no result mentions the institute, the bot uses Serper (`SERPER_API_KEY`), then Tavily (`TAVILY_API_KEY`).
+- **No surprise bills:** keep both accounts on their free plans without a card. When a provider refuses (credits finished, 401/402/403/429) the bot skips it for hours and moves to the next one; if all are down it falls back to the free search.
+- `/health` shows `providers` (configured/available) and `memory` (entries, durable).
