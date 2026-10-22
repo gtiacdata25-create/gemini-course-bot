@@ -71,6 +71,8 @@ footer{padding:0 16px 12px;font-size:.75rem;color:var(--muted)}
 let currentLang='bn';
 let userLoc=null; // {lat,lng} only while the 📍 toggle is on
 let history=[]; // sent with every request; cleared by 'New chat'
+let transcript=[]; // everything shown, so earlier answers can be re-rendered/translated when the language changes
+let translating=false;
 const MAX_HISTORY=10;
 const labels={
  bn:{subtitle:'পশ্চিমবঙ্গের কোর্স, প্রতিষ্ঠান ও ঠিকানা খুঁজুন',hints:'উদাহরণ: “হুগলিতে Montessori training institute খুঁজুন” · “এই কোর্সের eligibility ও fees কী?” · “Howrah থেকে কীভাবে যাব?”',placeholder:'আপনার প্রশ্ন লিখুন…',send:'পাঠান',welcome:'নমস্কার! আমি Jayanta AI। পশ্চিমবঙ্গের training institute, course details, ঠিকানা ও route সম্পর্কে প্রশ্ন করুন।',busy:'খোঁজ করা হচ্ছে…',newchat:'＋ নতুন চ্যাট',placesLabel:'📍 ম্যাপে পাওয়া স্থান:',openMaps:'Maps-এ খুলুন',locOn:'আপনার অবস্থান ব্যবহার হচ্ছে (বন্ধ করতে চাপুন)',locOff:'রুটের জন্য আমার বর্তমান অবস্থান ব্যবহার করুন',locDenied:'অবস্থান পাওয়া যায়নি। ব্রাউজারে অনুমতি দিন, বা শুরুর জায়গার নাম লিখুন।',error:'সার্ভারের সঙ্গে যোগাযোগ করা যাচ্ছে না। পরে আবার চেষ্টা করুন।'},
@@ -161,6 +163,35 @@ function addPlaces(div,places){
  });
  div.appendChild(wrap);
 }
+function addDiag(d){
+ const n=document.createElement('div');n.className='note';n.style.cssText='font-size:11px;opacity:.65;margin:2px 0 8px 4px';
+ n.textContent=(currentLang==='en'?'Info check: web results ':'তথ্য-যাচাই: ওয়েব ফল ')+d.search_results+(currentLang==='en'?', official site ':', অফিসিয়াল সাইট ')+(d.official_site?'✓':'✗'+((d.site_tried&&d.site_tried.length)?' ['+d.site_tried.join('; ')+']':''))+(currentLang==='en'?', web pages read ':', পড়া পেজ ')+d.web_pages+(d.from_memory?(currentLang==='en'?', from saved memory':', সঞ্চিত তথ্য থেকে'):'');
+ chat.appendChild(n);
+}
+function renderTranscript(){
+ chat.textContent='';
+ transcript.forEach(e=>{
+  if(e.who==='user'){addMessage(e.text,'user');return}
+  const txt=e.welcome?labels[currentLang].welcome:(e.texts[currentLang]||e.texts[e.lang]||'');
+  addMessage(txt,'bot',e.sources||[],e.places||[],e.route||null);
+  if(e.diag)addDiag(e.diag);
+ });
+}
+function rebuildHistory(){
+ history=transcript.filter(e=>!e.welcome&&!e.error).map(e=>e.who==='user'?{role:'user',content:e.text}:{role:'assistant',content:(e.texts[currentLang]||e.texts[e.lang]||'')}).slice(-MAX_HISTORY);
+}
+async function translateTranscript(lang){
+ // Translate the most recent bot answers that do not exist in this language yet (no new search).
+ const todo=transcript.filter(e=>e.who==='bot'&&!e.welcome&&!e.error&&!e.texts[lang]).slice(-3);
+ if(!todo.length){renderTranscript();rebuildHistory();return}
+ translating=true;send.disabled=true;statusEl.textContent=lang==='en'?'Translating…':lang==='hi'?'अनुवाद हो रहा है…':'অনুবাদ হচ্ছে…';
+ try{
+  const res=await fetch('/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({language:lang,texts:todo.map(e=>e.texts[e.lang])})});
+  const data=await res.json();
+  if(res.ok&&Array.isArray(data.translations)&&data.translations.length===todo.length){todo.forEach((e,i)=>{e.texts[lang]=data.translations[i]})}
+ }catch(err){}
+ finally{translating=false;send.disabled=false;statusEl.textContent='';if(currentLang===lang){renderTranscript();rebuildHistory()}}
+}
 function addMessage(text,who,sources=[],places=[],route=null){
  const div=document.createElement('div');div.className='msg '+(who==='user'?'user':'bot');
  if(who==='user')safeLinkify(div,String(text||'')); else renderBot(div,String(text||''));
@@ -171,10 +202,12 @@ function addMessage(text,who,sources=[],places=[],route=null){
  chat.appendChild(div);chat.scrollTop=chat.scrollHeight;
 }
 function setLang(lang){
+ const changed=lang!==currentLang;
  currentLang=lang;document.documentElement.lang=lang;
  document.querySelectorAll('.lang').forEach(b=>b.classList.toggle('active',b.dataset.lang===lang));
  const t=labels[lang];document.getElementById('subtitle').textContent=t.subtitle;document.getElementById('hints').textContent=t.hints;input.placeholder=t.placeholder;send.textContent=t.send;document.getElementById('newchat').textContent=t.newchat;{const b=document.getElementById('loc');b.title=userLoc?t.locOn:t.locOff;b.setAttribute('aria-label',b.title)}
- if(!chat.children.length)addMessage(t.welcome,'bot');
+ if(!transcript.length)transcript.push({who:'bot',welcome:true,texts:{}});
+ if(changed&&transcript.some(e=>e.who==='bot'&&!e.welcome))translateTranscript(lang);else renderTranscript();
 }
 document.querySelectorAll('.lang[data-lang]').forEach(b=>b.addEventListener('click',()=>setLang(b.dataset.lang)));
 document.getElementById('loc').addEventListener('click',()=>{
@@ -184,16 +217,18 @@ document.getElementById('loc').addEventListener('click',()=>{
  navigator.geolocation.getCurrentPosition(p=>{userLoc={lat:p.coords.latitude,lng:p.coords.longitude};b.classList.add('on');b.setAttribute('aria-pressed','true');b.title=t.locOn;statusEl.textContent=''},
   ()=>{userLoc=null;statusEl.textContent=t.locDenied},{enableHighAccuracy:false,timeout:10000,maximumAge:60000});
 });
-document.getElementById('newchat').addEventListener('click',()=>{history=[];chat.textContent='';statusEl.textContent='';addMessage(labels[currentLang].welcome,'bot');input.focus()});
+document.getElementById('newchat').addEventListener('click',()=>{history=[];transcript=[{who:'bot',welcome:true,texts:{}}];statusEl.textContent='';renderTranscript();input.focus()});
 document.getElementById('form').addEventListener('submit',async e=>{
- e.preventDefault();const text=input.value.trim();if(!text||send.disabled)return;
- addMessage(text,'user');input.value='';send.disabled=true;statusEl.textContent=labels[currentLang].busy;
+ e.preventDefault();const text=input.value.trim();if(!text||send.disabled||translating)return;
+ transcript.push({who:'user',text});addMessage(text,'user');input.value='';send.disabled=true;statusEl.textContent=labels[currentLang].busy;
  try{
   const res=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,language:currentLang,history:history.slice(-MAX_HISTORY),user_location:userLoc})});
-  const data=await res.json();addMessage(data.response||labels[currentLang].error,'bot',data.sources||[],data.places||[],data.route||null);
-  if(data.diag){const d=data.diag;const n=document.createElement('div');n.className='note';n.style.cssText='font-size:11px;opacity:.65;margin:2px 0 8px 4px';n.textContent=(currentLang==='en'?'Info check: web results ':'তথ্য-যাচাই: ওয়েব ফল ')+d.search_results+(currentLang==='en'?', official site ':', অফিসিয়াল সাইট ')+(d.official_site?'✓':'✗'+((d.site_tried&&d.site_tried.length)?' ['+d.site_tried.join('; ')+']':''))+(currentLang==='en'?', web pages read ':', পড়া পেজ ')+d.web_pages;chat.appendChild(n)}
+  const data=await res.json();const ok=res.ok&&!!data.response;const body=data.response||labels[currentLang].error;
+  transcript.push({who:'bot',texts:{[currentLang]:body},lang:currentLang,sources:data.sources||[],places:data.places||[],route:data.route||null,diag:data.diag||null,error:!ok});
+  addMessage(body,'bot',data.sources||[],data.places||[],data.route||null);
+  if(data.diag)addDiag(data.diag);
   if(res.ok&&data.response){history.push({role:'user',content:text},{role:'assistant',content:data.response});history=history.slice(-MAX_HISTORY)}
- }catch(err){addMessage(labels[currentLang].error,'bot')}
+ }catch(err){transcript.push({who:'bot',texts:{[currentLang]:labels[currentLang].error},lang:currentLang,error:true});addMessage(labels[currentLang].error,'bot')}
  finally{send.disabled=false;statusEl.textContent='';input.focus()}
 });
 setLang('bn');
