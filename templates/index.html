@@ -168,6 +168,17 @@ function addDiag(d){
  n.textContent=(currentLang==='en'?'Info check: web results ':'তথ্য-যাচাই: ওয়েব ফল ')+d.search_results+(currentLang==='en'?', official site ':', অফিসিয়াল সাইট ')+(d.official_site?'✓':'✗'+((d.site_tried&&d.site_tried.length)?' ['+d.site_tried.join('; ')+']':''))+(currentLang==='en'?', web pages read ':', পড়া পেজ ')+d.web_pages+(d.from_memory?(currentLang==='en'?', from saved memory':', সঞ্চিত তথ্য থেকে'):'');
  chat.appendChild(n);
 }
+const HINT={
+ bn:{msg:'আপনি বাংলায় প্রশ্ন লিখেছেন, কিন্তু উত্তর অন্য ভাষায় দেখানো হচ্ছে। বাংলায় দেখতে বোতামটি চাপুন (ভবিষ্যতে বাংলা বাটন আগে বেছে নিলে সরাসরি বাংলায় উত্তর পাবেন)।',btn:'বাংলায় দেখুন'},
+ en:{msg:'You wrote your question in English, but the answer is shown in another language. Tap the button to read it in English (choose English first next time to get English answers directly).',btn:'View in English'},
+ hi:{msg:'आपने हिन्दी में प्रश्न लिखा, लेकिन उत्तर दूसरी भाषा में दिख रहा है। हिन्दी में पढ़ने के लिए बटन दबाएँ (अगली बार पहले हिन्दी चुनें)।',btn:'हिन्दी में देखें'}
+};
+function addLangHint(h){
+ const d=document.createElement('div');d.className='note';d.style.cssText='font-size:13px;margin:4px 0 10px 4px;padding:8px 10px;border-radius:8px;background:rgba(255,193,7,.15)';
+ d.appendChild(document.createTextNode('🌐 '+HINT[h].msg+' '));
+ const b=document.createElement('button');b.type='button';b.textContent=HINT[h].btn;b.style.cssText='margin-left:6px;padding:4px 10px;border-radius:6px;cursor:pointer';
+ b.addEventListener('click',()=>setLang(h));d.appendChild(b);chat.appendChild(d);
+}
 function renderTranscript(){
  chat.textContent='';
  transcript.forEach(e=>{
@@ -175,6 +186,7 @@ function renderTranscript(){
   const txt=e.welcome?labels[currentLang].welcome:(e.texts[currentLang]||e.texts[e.lang]||'');
   addMessage(txt,'bot',e.sources||[],e.places||[],e.route||null);
   if(e.diag)addDiag(e.diag);
+  if(e.hint&&e.hint!==currentLang)addLangHint(e.hint);
  });
 }
 function rebuildHistory(){
@@ -198,7 +210,7 @@ function addMessage(text,who,sources=[],places=[],route=null){
  if(who!=='user'&&places.length)addPlaces(div,places);
  if(who!=='user'&&route&&!route.error)addRoute(div,route);
  if(who!=='user'&&sources.length){const box=document.createElement('div');box.className='sources';const label=document.createElement('div');label.textContent=currentLang==='en'?'Search results (verify official details):':currentLang==='hi'?'खोज परिणाम (आधिकारिक विवरण जाँचें):':'অনুসন্ধানের ফল (official তথ্য যাচাই করুন):';box.appendChild(label);
- sources.forEach(s=>{if(!s.url||!/^https?:\/\//i.test(s.url))return;const a=document.createElement('a');a.href=s.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=s.title||s.url;box.appendChild(a)});div.appendChild(box)}
+ sources.forEach(s=>{if(!s.url||!/^https?:\/\//i.test(s.url))return;const a=document.createElement('a');a.href=s.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=(s.title&&s.title.startsWith('🌐'))?('🌐 '+({bn:'প্রতিষ্ঠানের নিজস্ব ওয়েবসাইট',en:"Institute's own website",hi:'संस्थान की अपनी वेबसाइट'}[currentLang])):(s.title||s.url);box.appendChild(a)});div.appendChild(box)}
  chat.appendChild(div);chat.scrollTop=chat.scrollHeight;
 }
 function setLang(lang){
@@ -224,9 +236,10 @@ document.getElementById('form').addEventListener('submit',async e=>{
  try{
   const res=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,language:currentLang,history:history.slice(-MAX_HISTORY),user_location:userLoc})});
   const data=await res.json();const ok=res.ok&&!!data.response;const body=data.response||labels[currentLang].error;
-  transcript.push({who:'bot',texts:{[currentLang]:body},lang:currentLang,sources:data.sources||[],places:data.places||[],route:data.route||null,diag:data.diag||null,error:!ok});
+  transcript.push({who:'bot',texts:{[currentLang]:body},lang:currentLang,sources:data.sources||[],places:data.places||[],route:data.route||null,diag:data.diag||null,hint:data.lang_hint||null,error:!ok});
   addMessage(body,'bot',data.sources||[],data.places||[],data.route||null);
   if(data.diag)addDiag(data.diag);
+  if(data.lang_hint)addLangHint(data.lang_hint);
   if(res.ok&&data.response){history.push({role:'user',content:text},{role:'assistant',content:data.response});history=history.slice(-MAX_HISTORY)}
  }catch(err){transcript.push({who:'bot',texts:{[currentLang]:labels[currentLang].error},lang:currentLang,error:true});addMessage(labels[currentLang].error,'bot')}
  finally{send.disabled=false;statusEl.textContent='';input.focus()}
