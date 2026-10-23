@@ -1502,6 +1502,26 @@ def strip_unsupported_expansions(answer, evidence):
         return m.group(0) if m.group(2) in (evidence or "") else m.group(1)
     return _EXPANSION_NATIVE_RE.sub(fix_native, answer)
 
+def in_target_script(text, language):
+    """Cheap check that a translation really is in the requested language (script based)."""
+    letters = [ch for ch in text if ch.isalpha()]
+    if len(letters) < 20:
+        return True
+    def share(lo, hi):
+        return sum(lo <= ch <= hi for ch in letters) / len(letters)
+    if language == "bn":
+        return share("\u0980", "\u09FF") >= 0.25
+    if language == "hi":
+        return share("\u0900", "\u097F") >= 0.25
+    return share("A", "z") >= 0.6
+
+def name_in_text(name, text):
+    """True when the institute name (or most of its words) appears in the user's own message."""
+    norm = lambda t: re.sub(r"[^\w\u0980-\u09FF\u0900-\u097F]+", " ", t.lower()).split()
+    words = [w for w in norm(name) if len(w) > 2]
+    hay = set(norm(text))
+    return bool(words) and sum(w in hay for w in words) >= max(1, (len(words) * 2 + 2) // 3)
+
 def detect_language_hint(message, intent, selected):
     """Language the user actually wrote in, when it differs from the selected answer language (else None)."""
     if len(re.sub(r"[\W\d_]+", "", message)) < 4:
@@ -1564,26 +1584,32 @@ def translate():
     if not client:
         return jsonify({"error": "not configured"}), 503
     system = ("You are a precise translator. Translate each item of the JSON array into " + LANGUAGE_NAMES[language] +
-              ". Keep the markdown structure (tables, lists, bold), every URL, phone number, number, proper name and institute name unchanged. "
-              "Do not add, remove, explain or soften any information. Return ONLY a JSON object of the form {\"translations\": [...]} "
-              "with exactly as many strings as the input.")
-    try:
-        kwargs = {}
-        if "gpt-oss" in GROQ_MODEL:
-            kwargs["extra_body"] = {"reasoning_effort": "low"}
-        completion = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": json.dumps(texts, ensure_ascii=False)}],
-            temperature=0, max_tokens=6000, **kwargs)
-        note_usage(GROQ_MODEL, completion)
-        raw = (completion.choices[0].message.content or "").strip()
-        start, end = raw.find("{"), raw.rfind("}")
-        data = json.loads(raw[start:end + 1])
-        out = data.get("translations")
-        if isinstance(out, list) and len(out) == len(texts) and all(isinstance(x, str) and x.strip() for x in out):
-            return jsonify({"translations": out})
-    except Exception:
-        app.logger.warning("Translation failed", exc_info=False)
+              ". Write every sentence fully in " + LANGUAGE_NAMES[language] + "; only URLs, phone numbers, numbers, e-mail addresses and proper names of institutes/places stay as they are. "
+              "Keep the markdown structure (tables, lists, bold). Do not add, remove, explain or soften any information. "
+              "Return ONLY a JSON object of the form {\"translations\": [...]} with exactly as many strings as the input.")
+    models = [GROQ_MODEL] + ([EXTRACT_MODEL] if EXTRACT_MODEL and EXTRACT_MODEL != GROQ_MODEL else [])
+    for model in models:
+        try:
+            kwargs = {"extra_body": {"reasoning_effort": "low"}} if "gpt-oss" in model else {}
+            completion = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": json.dumps(texts, ensure_ascii=False)}],
+                temperature=0, max_tokens=6000, **kwargs)
+            note_usage(model, completion)
+            raw = (completion.choices[0].message.content or "").strip()
+            out = None
+            start, end = raw.find("{"), raw.rfind("}")
+            try:
+                out = json.loads(raw[start:end + 1]).get("translations")
+            except Exception:
+                if len(texts) == 1 and raw and not raw.startswith("{"):
+                    out = [raw]          # model answered with plain text instead of JSON
+            if isinstance(out, list) and len(out) == len(texts) and all(isinstance(x, str) and x.strip() for x in out) \
+                    and all(in_target_script(x, language) for x in out):
+                return jsonify({"translations": out})
+            app.logger.warning("Translation rejected (format or language check) on %s", model)
+        except Exception:
+            app.logger.warning("Translation failed on %s", model, exc_info=False)
     return jsonify({"error": "Translation failed."}), 502
 
 @app.post("/chat")
@@ -1715,11 +1741,16 @@ def chat():
     else:
         route_block = ""
 
+    # A message that names an institute stands on its own (older turns about another institute must not leak in).
+    named = (intent.get("institute_en") or intent.get("institute") or "").strip()
+    topic_changed = bool(intent["needs_lookup"] and named and name_in_text(named, user_message))
     site_text = site_block(site, intent["needs_lookup"] and intent["wants_details"] and bool(intent["institute"] or intent["institute_en"]), web_pages)
     prompt = (
         f"Selected answer language: {LANGUAGE_NAMES[language]} ({language}).\n"
         f"User question: {user_message}\n\n"
-        f"{maps_block}\n\n"
+        + (f"The question is ONLY about this institute: {named}. Use facts only from the data below and only if they are about {named}; "
+           f"if the data below is about a different institute or has nothing on {named}, say clearly that nothing could be confirmed for {named} right now and suggest the user retry or give the area/website. Never answer about any other institute.\n\n" if topic_changed else "")
+        + f"{maps_block}\n\n"
         + (f"{route_block}\n\n" if route_block else "")
         + (f"{site_text}\n\n" if site_text else "")
         + (f"{REVIEWS_NOTE}\n\n" if intent["wants_reviews"] else "") +
@@ -1729,8 +1760,10 @@ def chat():
         "For route requests, if origin/destination are not clear, ask for the missing place rather than guessing."
     )
 
+    # A message that names an institute stands on its own. Earlier turns about a different institute must not leak in.
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    messages.extend(history)
+    if not topic_changed:
+        messages.extend(history)
     messages.append({"role": "user", "content": prompt})
 
     try:
