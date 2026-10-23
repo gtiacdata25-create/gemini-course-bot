@@ -98,6 +98,9 @@ CORE TASKS:
 - STRICT SOURCING: every duration, eligibility rule, fee, approval/affiliation, rating, phone number or course description you write must appear literally in the excerpts, snippets or map data you were given. Do NOT fill gaps from general knowledge (for example typical course lengths such as '2 years' or '12th pass'). If it is not in the excerpts, leave that row or column out, or write 'not stated'. Never write 'the institute says' for something that came only from a search snippet; call that 'a web snippet says'. Never expand an abbreviation (for example CMS & ED) unless the excerpts expand it themselves. ISO or MSME listings are not education-board recognition; say so if they are the only credentials mentioned. Do not give an NCTE, board or council approval unless the excerpt names it for that specific course.
 - Do NOT add a 'how to get there' section, nearest stations, distances, bus or taxi advice unless 'Route data' is provided. Do not end with assurances such as 'all information was taken directly from the sources'. Never output citation markers like 【1†L1-L3】; name the source in plain words instead.
 - Certificates from private skill bodies, NGOs or trusts (for example Bharat Sevak Samaj, World Skill Council, ISO or MSME listings) are not the same as recognition by a university, NCTE, a state board or a professional council. Report them as the institute's claims and tell the user which regulator to check for the course type.
+- For recognitions, affiliations and approvals quote the wording used on the site or snippet; do NOT describe what the awarding body is (for example do not call it a national agency, an international council or a government body) unless the excerpt says so.
+- Never use the words 'evidence', 'excerpts', 'draft' or 'provided sources' in the answer. Say 'the website', 'the pages checked' or 'the map listing' instead, for example 'not stated on the pages checked'.
+- Do not add mottos, history or other background that is not needed to answer the question.
 - Lead with what you found. Do not write a list of negatives like 'no information found' or 'not mentioned'. Put anything missing in ONE short closing line (for example: fees and recognition are not stated, ask the institute for them in writing), and never say no source was found when sources are present.
 - When details are missing, say exactly what was found, what was not found, and what to ask the institute (which board or university gives the certificate, total fee in writing, batch size, who teaches, placement record), instead of ending with only "not available".
 - If "Route data" is provided, it is the ONLY source for bus, train, metro and tram lines, stops, stations, distances and times. Never add bus numbers, lines, stations, fares or timings that are not in it. Distances to stations are straight-line distances, not walking distances. Give a short friendly summary (about 6-8 lines): the best option, how to reach the nearest metro/railway station/bus stop, and a taxi alternative. The app shows the full step-by-step route card below your message, so do not repeat every step. If the data says no public-transport route was found, say Google had no bus/train/metro data for this trip and suggest the nearest station and a cab. Taxi fares are shown inside the cab app; never state a fare.
@@ -156,6 +159,7 @@ Reply with ONLY one JSON object (no markdown, no commentary) with these keys:
 - "wants_reviews": true if the user asks about reviews, ratings, feedback, reputation, or whether the institute is good, safe or genuine.
 - "wants_route": true if the user asks how to get to / reach / travel to a place, or asks for directions, route, bus, train, metro, cab or taxi to an institute.
 - "origin": the STARTING place as an English Google Maps text query (e.g. "Howrah Station, Howrah, West Bengal"); "" if no starting point is stated, or if the user means their current location.
+- "message_language": the language the user's latest message is written in: "bn" for Bengali (also Bengali typed in English letters, e.g. "ki sekhano hoy"), "hi" for Hindi (also Hindi typed in English letters), "en" for English, "other" if unclear or only a name/number.
 - "web_queries": up to 2 short web search queries. The first in English; the second in the user's original script/spelling if it is not English. Do NOT add filler words like official, address, eligibility or fees.
 """
 
@@ -169,6 +173,7 @@ def extract_intent(message, history):
         "place_query": _clip(message, 160),
         "web_queries": [_clip(message + " West Bengal", 200)],
         "wants_route": False, "origin": "", "institute_en": "", "wants_details": True, "wants_reviews": False,
+        "message_language": "other",
     }
     if not client:
         return fallback
@@ -216,6 +221,7 @@ def extract_intent(message, history):
             "institute_en": _clip(data.get("institute_en")),
             "wants_details": bool(data.get("wants_details", True)),
             "wants_reviews": bool(data.get("wants_reviews", False)),
+            "message_language": str(data.get("message_language", "other")).lower().strip()[:5],
         }
         if result["needs_lookup"]:
             if not result["web_queries"]:
@@ -1448,8 +1454,8 @@ VERIFY_PROMPT = (
     "route data) and a DRAFT answer. Rewrite the DRAFT in the same language and the same markdown layout, keeping every statement that "
     "the EVIDENCE literally supports. Remove, or replace with 'not stated', every course description, abbreviation expansion "
     "(for example what OT, CMS, ED or TTC stands for), duration, eligibility rule, fee, approval/recognition, rating, phone number, "
-    "address, distance, station or transport detail that the EVIDENCE does not literally contain. Keep the draft's warnings about "
-    "regulators and recognition. Do not add new facts, do not mention this check, do not add citation markers. Output only the final answer.")
+    "address, distance, station or transport detail that the EVIDENCE does not literally contain, and any description of what an awarding body or certifier is. Keep the draft's warnings about "
+    "regulators and recognition. Do not add new facts, do not mention this check, do not add citation markers. Never write the words evidence, draft or provided evidence in the final answer: write \"not stated on the pages checked\" instead. Output only the final answer.")
 
 def verify_answer(draft, evidence):
     """Second pass: drop anything in the draft that the evidence does not literally support. Falls back to the draft.
@@ -1477,6 +1483,36 @@ def verify_answer(draft, evidence):
         VERIFY_DOWN_UNTIL[0] = time.time() + (60 if "RateLimit" in type(exc).__name__ else 900)
         app.logger.warning("Answer verification skipped: %s", type(exc).__name__)
     return draft
+
+_EXPANSION_RE = re.compile(r"\b([A-Z]{2,6}(?:\s*&\s*[A-Z]{2,6})?)\s*\(([A-Za-z][A-Za-z &/.,'\-]{2,70})\)")
+
+_EXPANSION_NATIVE_RE = re.compile(r"\b([A-Z]{2,6}(?:\s*&\s*[A-Z]{2,6})?)\s*\(([\u0900-\u097F\u0980-\u09FF][^)]{2,70})\)")
+
+def strip_unsupported_expansions(answer, evidence):
+    """Deterministic guard against invented abbreviations: 'OT (Occupational Therapy)' is cut back to 'OT' unless every
+    word of the expansion appears in the evidence the answer was written from."""
+    low = (evidence or "").lower()
+    def fix(m):
+        words = re.findall(r"[a-z]{3,}", m.group(2).lower())
+        if words and not all(w in low for w in words):
+            return m.group(1)
+        return m.group(0)
+    answer = _EXPANSION_RE.sub(fix, answer)
+    def fix_native(m):  # expansion written in Bengali/Hindi script: keep only if that exact text is in the evidence
+        return m.group(0) if m.group(2) in (evidence or "") else m.group(1)
+    return _EXPANSION_NATIVE_RE.sub(fix_native, answer)
+
+def detect_language_hint(message, intent, selected):
+    """Language the user actually wrote in, when it differs from the selected answer language (else None)."""
+    if len(re.sub(r"[\W\d_]+", "", message)) < 4:
+        return None
+    if re.search(r"[\u0980-\u09FF]", message):
+        detected = "bn"
+    elif re.search(r"[\u0900-\u097F]", message):
+        detected = "hi"
+    else:
+        detected = intent.get("message_language")
+    return detected if detected in LANGUAGE_NAMES and detected != selected else None
 
 STAGE2_BUDGET_SECONDS = 12
 STAGE3_BUDGET_SECONDS = 20
@@ -1716,6 +1752,8 @@ def chat():
         if intent["needs_lookup"] and (site or web_pages) and (time.time() - t_start) < 55:
             evidence = "\n\n".join(x for x in (maps_block, route_block, site_text, search_context) if x)
             answer = verify_answer(answer, evidence)
+        if intent["needs_lookup"]:
+            answer = strip_unsupported_expansions(answer, "\n\n".join(x for x in (maps_block, route_block, site_text, search_context) if x))
 
         # If Google Places found nothing, still offer a precise Maps search link (name + area, not the whole sentence).
         fallback_maps = None
@@ -1731,6 +1769,7 @@ def chat():
             "language": language,
             "sources": sources_out,
             "diag": {"search_results": len(search_results), "search_backend": SEARCH_STATS["last_backend"], "search_error": SEARCH_STATS["last_error"] if not search_results else "", "official_site": bool(site), "web_pages": len(web_pages), "from_memory": from_memory, "site_tried": site_log[:4]},
+            "lang_hint": detect_language_hint(user_message, intent, language),
             "site": ({"url": site["url"], "pages": site["pages"], "name_ok": site["name_ok"], "loc_ok": site["loc_ok"]} if site else None),
             "places": places,
             "route": route_guide,
