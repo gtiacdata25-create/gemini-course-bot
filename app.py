@@ -159,7 +159,7 @@ Reply with ONLY one JSON object (no markdown, no commentary) with these keys:
 - "wants_reviews": true if the user asks about reviews, ratings, feedback, reputation, or whether the institute is good, safe or genuine.
 - "wants_route": true if the user asks how to get to / reach / travel to a place, or asks for directions, route, bus, train, metro, cab or taxi to an institute.
 - "origin": the STARTING place as an English Google Maps text query (e.g. "Howrah Station, Howrah, West Bengal"); "" if no starting point is stated, or if the user means their current location.
-- "message_language": the language the user's latest message is written in: "bn" for Bengali (also Bengali typed in English letters, e.g. "ki sekhano hoy"), "hi" for Hindi (also Hindi typed in English letters), "en" for English, "other" if unclear or only a name/number.
+- "message_language": the language the user's latest message is written in: "bn" for Bengali (also Bengali typed in English letters, e.g. "ki sekhano hoy"), "hi" for Hindi (also Hindi typed in English letters, e.g. "kaise jaye", "kya hai", "kahan hai", "kitna lagega"), "en" for English, "other" if unclear or only a name/number.
 - "web_queries": up to 2 short web search queries. The first in English; the second in the user's original script/spelling if it is not English. Do NOT add filler words like official, address, eligibility or fees.
 """
 
@@ -1796,6 +1796,8 @@ def chat():
 
         _nm = intent["institute_en"] or intent["institute"]
         shown_results = [r for r in search_results if _result_relevant(_nm, r)] if (_name_tokens(_nm) and intent["needs_lookup"]) else search_results
+        if intent["needs_lookup"] and not _name_tokens(_nm) and places:
+            shown_results = []   # generic question: the map cards are the sources, loose web pages (e.g. Wikipedia) only confuse
         sources_out = ([{"title": "🌐 " + SITE_LABEL[language], "url": site["url"], "snippet": ""}] if site else []) + [{"title": "📄 " + urllib.parse.urlparse(w["url"]).netloc, "url": w["url"], "snippet": ""} for w in web_pages] + shown_results
         return jsonify({
             "response": answer,
