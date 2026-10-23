@@ -101,6 +101,7 @@ CORE TASKS:
 - For recognitions, affiliations and approvals quote the wording used on the site or snippet; do NOT describe what the awarding body is (for example do not call it a national agency, an international council or a government body) unless the excerpt says so.
 - Never use the words 'evidence', 'excerpts', 'draft' or 'provided sources' in the answer. Say 'the website', 'the pages checked' or 'the map listing' instead, for example 'not stated on the pages checked'.
 - Do not add mottos, history or other background that is not needed to answer the question.
+- NEVER build a table row, column or list item whose content is only 'not stated' / 'not mentioned'. Leave such rows out completely and mention what is missing in ONE closing sentence. If the sources name programme levels or courses (for example a web result titled 'UG & PG programmes', or B.Tech, M.Tech, MBA, Ph.D, diploma, certificate names in a snippet or page), list those names as 'a web result says' / 'the website says' even when details such as fees or duration are missing. If almost nothing is known, write a short answer: the institute, the map result, any programme names found, the website link, and what to ask the institute.
 - Lead with what you found. Do not write a list of negatives like 'no information found' or 'not mentioned'. Put anything missing in ONE short closing line (for example: fees and recognition are not stated, ask the institute for them in writing), and never say no source was found when sources are present.
 - When details are missing, say exactly what was found, what was not found, and what to ask the institute (which board or university gives the certificate, total fee in writing, batch size, who teaches, placement record), instead of ending with only "not available".
 - If "Route data" is provided, it is the ONLY source for bus, train, metro and tram lines, stops, stations, distances and times. Never add bus numbers, lines, stations, fares or timings that are not in it. Distances to stations are straight-line distances, not walking distances. Give a short friendly summary (about 6-8 lines): the best option, how to reach the nearest metro/railway station/bus stop, and a taxi alternative. The app shows the full step-by-step route card below your message, so do not repeat every step. If the data says no public-transport route was found, say Google had no bus/train/metro data for this trip and suggest the nearest station and a cab. Taxi fares are shown inside the cab app; never state a fare.
@@ -1109,7 +1110,7 @@ SITE_TOTAL_CHARS = 6000
 SITE_CACHE = TTLCache(ttl=30 * 60, maxsize=64)
 SITE_REASONS = {}  # url -> short reason of the last read attempt (for the diagnostic line)
 ROBOTS_CACHE = TTLCache(ttl=60 * 60, maxsize=64)
-SITE_LINK_WORDS = ("course", "about", "contact", "admission", "fee", "placement", "program", "training", "diploma",
+SITE_LINK_WORDS = ("course", "academic", "program", "admission", "department", "about", "contact", "fee", "placement", "training", "diploma",
                    "certificate", "affiliat", "recogni", "ttc", "syllabus", "faculty", "batch")
 SKIP_HOSTS = ("facebook.com", "instagram.com", "youtube.com", "youtu.be", "twitter.com", "x.com", "linkedin.com",
               "wa.me", "whatsapp.com", "justdial.com", "sulekha.com", "indiamart.com", "google.com", "goo.gl")
@@ -1328,7 +1329,8 @@ def read_web_pages(intent, user_text, search_results, exclude_url=None, limit=1)
     hints = _location_hints(user_text, intent)
     skip_host = urllib.parse.urlparse(exclude_url).netloc.lower().removeprefix("www.") if exclude_url else None
     urls, seen = [], set()
-    for r in search_results[:6]:
+    course_first = sorted(search_results[:6], key=lambda r: 0 if re.search(r"course|program|academ|admission|syllabus|department", (r.get("title", "") + " " + r["url"]).lower()) else 1)
+    for r in course_first:
         host = urllib.parse.urlparse(r["url"]).netloc.lower().removeprefix("www.")
         if host and host != skip_host and host not in seen and not r["url"].lower().endswith(".pdf"):
             seen.add(host)
@@ -1452,10 +1454,10 @@ def store_key_for(intent):
 VERIFY_PROMPT = (
     "You are a strict fact-checker for an institute-information chatbot. You get EVIDENCE (map data, website excerpts, web snippets, "
     "route data) and a DRAFT answer. Rewrite the DRAFT in the same language and the same markdown layout, keeping every statement that "
-    "the EVIDENCE literally supports. Remove, or replace with 'not stated', every course description, abbreviation expansion "
+    "the EVIDENCE literally supports. Remove (delete the whole table row or list item; never write 'not stated' in a cell) every course description, abbreviation expansion "
     "(for example what OT, CMS, ED or TTC stands for), duration, eligibility rule, fee, approval/recognition, rating, phone number, "
     "address, distance, station or transport detail that the EVIDENCE does not literally contain, and any description of what an awarding body or certifier is. Keep the draft's warnings about "
-    "regulators and recognition. Do not add new facts, do not mention this check, do not add citation markers. Never write the words evidence, draft or provided evidence in the final answer: write \"not stated on the pages checked\" instead. Output only the final answer.")
+    "regulators and recognition. Do not add new facts, do not mention this check, do not add citation markers. Never write the words evidence, draft or provided evidence in the final answer. Do NOT write \"not stated\" inside table cells: delete the unsupported row or cell completely and mention what is missing in one closing sentence. Output only the final answer.")
 
 def verify_answer(draft, evidence):
     """Second pass: drop anything in the draft that the evidence does not literally support. Falls back to the draft.
@@ -1501,6 +1503,36 @@ def strip_unsupported_expansions(answer, evidence):
     def fix_native(m):  # expansion written in Bengali/Hindi script: keep only if that exact text is in the evidence
         return m.group(0) if m.group(2) in (evidence or "") else m.group(1)
     return _EXPANSION_NATIVE_RE.sub(fix_native, answer)
+
+_EMPTY_CELL_RE = re.compile(r"^\W*(not stated(?: on the pages checked)?|not mentioned|not available|not provided|n/?a|unknown|"
+                            r"ওয়েবসাইটে উল্লেখ নেই|উল্লেখ নেই|জানা যায়নি|উপলব্ধ নয়|उल्लेख नहीं|उपलब्ध नहीं|—|-)\W*$", re.I)
+
+def _cells(line):
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+def drop_empty_table_rows(answer):
+    """Remove table rows / columns that contain nothing but 'not stated' style cells (a model habit when sources are thin)."""
+    lines, out, i = answer.split("\n"), [], 0
+    while i < len(lines):
+        if not lines[i].lstrip().startswith("|"):
+            out.append(lines[i]); i += 1; continue
+        j = i
+        while j < len(lines) and lines[j].lstrip().startswith("|"):
+            j += 1
+        block = lines[i:j]; i = j
+        if len(block) < 3 or not re.fullmatch(r"[\s|:\-]+", block[1]):
+            out.extend(block); continue
+        head, rows = _cells(block[0]), [_cells(r) for r in block[2:]]
+        rows = [r for r in rows if not (len(r) >= 2 and all(_EMPTY_CELL_RE.match(c or "-") for c in r[1:]))]
+        if not rows:
+            continue                                   # nothing real left in this table
+        keep = [0] + [k for k in range(1, len(head)) if any(k < len(r) and not _EMPTY_CELL_RE.match(r[k] or "-") for r in rows)]
+        if len(keep) < 2:
+            keep = [0, 1] if len(head) > 1 else [0]
+        fmt = lambda cells: "| " + " | ".join(cells[k] if k < len(cells) else "" for k in keep) + " |"
+        out.append(fmt(head)); out.append("|" + "|".join(" --- " for _ in keep) + "|")
+        out.extend(fmt(r) for r in rows)
+    return "\n".join(out)
 
 def in_target_script(text, language):
     """Cheap check that a translation really is in the requested language (script based)."""
@@ -1787,6 +1819,7 @@ def chat():
             answer = verify_answer(answer, evidence)
         if intent["needs_lookup"]:
             answer = strip_unsupported_expansions(answer, "\n\n".join(x for x in (maps_block, route_block, site_text, search_context) if x))
+            answer = drop_empty_table_rows(answer)
 
         # If Google Places found nothing, still offer a precise Maps search link (name + area, not the whole sentence).
         fallback_maps = None
