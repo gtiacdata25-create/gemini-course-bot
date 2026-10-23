@@ -23,7 +23,8 @@ app.config.update(
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b").strip()
-client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+# Few retries and a hard timeout: the SDK's default retry can sleep for a long time after a rate limit and hit the worker timeout.
+client = Groq(api_key=GROQ_API_KEY, max_retries=1, timeout=40.0) if GROQ_API_KEY else None
 
 # Google Places API (New) - Text Search. Key is read from the environment only.
 GOOGLE_PLACES_API_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "").strip()
