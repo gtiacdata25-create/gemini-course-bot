@@ -65,7 +65,7 @@ footer{padding:0 16px 12px;font-size:.75rem;color:var(--muted)}
   <button class="loc" id="loc" type="button" aria-pressed="false" title="">📍</button>
   <button class="send" id="send" type="submit">পাঠান</button>
 </form>
-<footer>তথ্য পরিবর্তন হতে পারে। ভর্তি, ফি ও recognition-এর জন্য সংশ্লিষ্ট official source যাচাই করুন।</footer>
+<footer id="footer">তথ্য পরিবর্তন হতে পারে। ভর্তি, ফি ও recognition-এর জন্য সংশ্লিষ্ট official source যাচাই করুন।</footer>
 </main>
 <script>
 let currentLang='bn';
@@ -75,9 +75,9 @@ let transcript=[]; // everything shown, so earlier answers can be re-rendered/tr
 let translating=false;
 const MAX_HISTORY=10;
 const labels={
- bn:{subtitle:'পশ্চিমবঙ্গের কোর্স, প্রতিষ্ঠান ও ঠিকানা খুঁজুন',hints:'উদাহরণ: “হুগলিতে Montessori training institute খুঁজুন” · “এই কোর্সের eligibility ও fees কী?” · “Howrah থেকে কীভাবে যাব?”',placeholder:'আপনার প্রশ্ন লিখুন…',send:'পাঠান',welcome:'নমস্কার! আমি Jayanta AI। পশ্চিমবঙ্গের training institute, course details, ঠিকানা ও route সম্পর্কে প্রশ্ন করুন।',busy:'খোঁজ করা হচ্ছে…',newchat:'＋ নতুন চ্যাট',placesLabel:'📍 ম্যাপে পাওয়া স্থান:',openMaps:'Maps-এ খুলুন',locOn:'আপনার অবস্থান ব্যবহার হচ্ছে (বন্ধ করতে চাপুন)',locOff:'রুটের জন্য আমার বর্তমান অবস্থান ব্যবহার করুন',locDenied:'অবস্থান পাওয়া যায়নি। ব্রাউজারে অনুমতি দিন, বা শুরুর জায়গার নাম লিখুন।',error:'সার্ভারের সঙ্গে যোগাযোগ করা যাচ্ছে না। পরে আবার চেষ্টা করুন।'},
- en:{subtitle:'Find courses, institutes and addresses across West Bengal',hints:'Examples: “Find Montessori training institutes in Hooghly” · “What are the eligibility and fees?” · “How do I travel from Howrah?”',placeholder:'Type your question…',send:'Send',welcome:'Hello! I am Jayanta AI. Ask me about training institutes, course details, addresses and routes in West Bengal.',busy:'Searching…',newchat:'+ New chat',placesLabel:'📍 Place found on the map:',openMaps:'Open in Maps',locOn:'Using your location (tap to turn off)',locOff:'Use my current location for routes',locDenied:'Could not get your location. Allow it in the browser, or type your starting place.',error:'Unable to contact the server. Please try again.'},
- hi:{subtitle:'पश्चिम बंगाल में कोर्स, संस्थान और पते खोजें',hints:'उदाहरण: “हुगली में Montessori training institute खोजें” · “योग्यता और फीस क्या है?” · “हावड़ा से कैसे पहुँचें?”',placeholder:'अपना प्रश्न लिखें…',send:'भेजें',welcome:'नमस्ते! मैं Jayanta AI हूँ। पश्चिम बंगाल के प्रशिक्षण संस्थानों, कोर्स, पते और रास्तों के बारे में पूछें।',busy:'खोज जारी है…',newchat:'+ नई चैट',placesLabel:'📍 मैप पर मिला स्थान:',openMaps:'Maps में खोलें',locOn:'आपकी लोकेशन इस्तेमाल हो रही है (बंद करने के लिए दबाएँ)',locOff:'रूट के लिए मेरी मौजूदा लोकेशन इस्तेमाल करें',locDenied:'लोकेशन नहीं मिली। ब्राउज़र में अनुमति दें, या शुरू की जगह लिखें।',error:'सर्वर से संपर्क नहीं हो पाया। कृपया फिर प्रयास करें।'}
+ bn:{subtitle:'পশ্চিমবঙ্গের কোর্স, প্রতিষ্ঠান ও ঠিকানা খুঁজুন',hints:'উদাহরণ: “হুগলিতে Montessori training institute খুঁজুন” · “এই কোর্সের eligibility ও fees কী?” · “Howrah থেকে কীভাবে যাব?”',placeholder:'আপনার প্রশ্ন লিখুন…',send:'পাঠান',welcome:'নমস্কার! আমি Jayanta AI। পশ্চিমবঙ্গের training institute, course details, ঠিকানা ও route সম্পর্কে প্রশ্ন করুন।',busy:'খোঁজ করা হচ্ছে…',newchat:'＋ নতুন চ্যাট',placesLabel:'📍 ম্যাপে পাওয়া স্থান:',openMaps:'Maps-এ খুলুন',locOn:'আপনার অবস্থান ব্যবহার হচ্ছে (বন্ধ করতে চাপুন)',locOff:'রুটের জন্য আমার বর্তমান অবস্থান ব্যবহার করুন',locDenied:'অবস্থান পাওয়া যায়নি। ব্রাউজারে অনুমতি দিন, বা শুরুর জায়গার নাম লিখুন।',error:'সার্ভারের সঙ্গে যোগাযোগ করা যাচ্ছে না। পরে আবার চেষ্টা করুন।',footer:'তথ্য পরিবর্তন হতে পারে। ভর্তি, ফি ও recognition-এর জন্য সংশ্লিষ্ট official source যাচাই করুন।'},
+ en:{subtitle:'Find courses, institutes and addresses across West Bengal',hints:'Examples: “Find Montessori training institutes in Hooghly” · “What are the eligibility and fees?” · “How do I travel from Howrah?”',placeholder:'Type your question…',send:'Send',welcome:'Hello! I am Jayanta AI. Ask me about training institutes, course details, addresses and routes in West Bengal.',busy:'Searching…',newchat:'+ New chat',placesLabel:'📍 Place found on the map:',openMaps:'Open in Maps',locOn:'Using your location (tap to turn off)',locOff:'Use my current location for routes',locDenied:'Could not get your location. Allow it in the browser, or type your starting place.',error:'Unable to contact the server. Please try again.',footer:'Information may change. Please verify admission, fees and recognition with the official source.'},
+ hi:{subtitle:'पश्चिम बंगाल में कोर्स, संस्थान और पते खोजें',hints:'उदाहरण: “हुगली में Montessori training institute खोजें” · “योग्यता और फीस क्या है?” · “हावड़ा से कैसे पहुँचें?”',placeholder:'अपना प्रश्न लिखें…',send:'भेजें',welcome:'नमस्ते! मैं Jayanta AI हूँ। पश्चिम बंगाल के प्रशिक्षण संस्थानों, कोर्स, पते और रास्तों के बारे में पूछें।',busy:'खोज जारी है…',newchat:'+ नई चैट',placesLabel:'📍 मैप पर मिला स्थान:',openMaps:'Maps में खोलें',locOn:'आपकी लोकेशन इस्तेमाल हो रही है (बंद करने के लिए दबाएँ)',locOff:'रूट के लिए मेरी मौजूदा लोकेशन इस्तेमाल करें',locDenied:'लोकेशन नहीं मिली। ब्राउज़र में अनुमति दें, या शुरू की जगह लिखें।',error:'सर्वर से संपर्क नहीं हो पाया। कृपया फिर प्रयास करें।',footer:'जानकारी बदल सकती है। प्रवेश, फीस और मान्यता के लिए आधिकारिक स्रोत से जाँच करें।'}
 };
 const chat=document.getElementById('chat'), input=document.getElementById('message'), statusEl=document.getElementById('status'), send=document.getElementById('send');
 function safeLinkify(container,text){
@@ -165,7 +165,8 @@ function addPlaces(div,places){
 }
 function addDiag(d){
  const n=document.createElement('div');n.className='note';n.style.cssText='font-size:11px;opacity:.65;margin:2px 0 8px 4px';
- n.textContent=(currentLang==='en'?'Info check: web results ':'তথ্য-যাচাই: ওয়েব ফল ')+d.search_results+(currentLang==='en'?', official site ':', অফিসিয়াল সাইট ')+(d.official_site?'✓':'✗'+((d.site_tried&&d.site_tried.length)?' ['+d.site_tried.join('; ')+']':''))+(currentLang==='en'?', web pages read ':', পড়া পেজ ')+d.web_pages+(d.from_memory?(currentLang==='en'?', from saved memory':', সঞ্চিত তথ্য থেকে'):'');
+ const L={bn:['তথ্য-যাচাই: ওয়েব ফল ',', অফিসিয়াল সাইট ',', পড়া পেজ ',', সঞ্চিত তথ্য থেকে'],en:['Info check: web results ',', official site ',', web pages read ',', from saved memory'],hi:['जानकारी जाँच: वेब नतीजे ',', आधिकारिक साइट ',', पढ़े गए पेज ',', सहेजी हुई जानकारी से']}[currentLang];
+ n.textContent=L[0]+d.search_results+L[1]+(d.official_site?'✓':'✗'+((d.site_tried&&d.site_tried.length)?' ['+d.site_tried.join('; ')+']':''))+L[2]+d.web_pages+(d.from_memory?L[3]:'');
  chat.appendChild(n);
 }
 const HINT={
@@ -192,17 +193,34 @@ function renderTranscript(){
 function rebuildHistory(){
  history=transcript.filter(e=>!e.welcome&&!e.error).map(e=>e.who==='user'?{role:'user',content:e.text}:{role:'assistant',content:(e.texts[currentLang]||e.texts[e.lang]||'')}).slice(-MAX_HISTORY);
 }
+const TRFAIL={bn:'অনুবাদ করা যায়নি (সার্ভার ব্যস্ত)। কয়েক সেকেন্ড পরে ভাষার বোতামটি আবার চাপুন।',en:'Could not translate (server busy). Tap the language button again in a few seconds.',hi:'अनुवाद नहीं हो पाया (सर्वर व्यस्त)। कुछ सेकंड बाद भाषा का बटन फिर दबाएँ।'};
+async function translateOne(e,lang){
+ for(let attempt=0;attempt<2;attempt++){
+  try{
+   const res=await fetch('/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({language:lang,texts:[e.texts[e.lang]]})});
+   const data=await res.json();
+   if(res.ok&&Array.isArray(data.translations)&&data.translations.length===1){e.texts[lang]=data.translations[0];return true}
+  }catch(err){}
+  if(attempt===0)await new Promise(r=>setTimeout(r,7000));
+ }
+ return false;
+}
 async function translateTranscript(lang){
- // Translate the most recent bot answers that do not exist in this language yet (no new search).
- const todo=transcript.filter(e=>e.who==='bot'&&!e.welcome&&!e.error&&!e.texts[lang]).slice(-3);
+ // Translate the most recent bot answers that do not exist in this language yet (no new search), one at a time, newest first.
+ const todo=transcript.filter(e=>e.who==='bot'&&!e.welcome&&!e.error&&!e.texts[lang]).slice(-3).reverse();
  if(!todo.length){renderTranscript();rebuildHistory();return}
- translating=true;send.disabled=true;statusEl.textContent=lang==='en'?'Translating…':lang==='hi'?'अनुवाद हो रहा है…':'অনুবাদ হচ্ছে…';
+ translating=true;send.disabled=true;let failed=false;
  try{
-  const res=await fetch('/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({language:lang,texts:todo.map(e=>e.texts[e.lang])})});
-  const data=await res.json();
-  if(res.ok&&Array.isArray(data.translations)&&data.translations.length===todo.length){todo.forEach((e,i)=>{e.texts[lang]=data.translations[i]})}
- }catch(err){}
- finally{translating=false;send.disabled=false;statusEl.textContent='';if(currentLang===lang){renderTranscript();rebuildHistory()}}
+  for(const e of todo){
+   statusEl.textContent=lang==='en'?'Translating…':lang==='hi'?'अनुवाद हो रहा है…':'অনুবাদ হচ্ছে…';
+   const ok=await translateOne(e,lang);
+   if(!ok){failed=true;break}
+   if(currentLang===lang){renderTranscript()}
+  }
+ }finally{
+  translating=false;send.disabled=false;statusEl.textContent=failed?TRFAIL[lang]:'';
+  if(currentLang===lang){renderTranscript();rebuildHistory()}
+ }
 }
 function addMessage(text,who,sources=[],places=[],route=null){
  const div=document.createElement('div');div.className='msg '+(who==='user'?'user':'bot');
@@ -217,9 +235,10 @@ function setLang(lang){
  const changed=lang!==currentLang;
  currentLang=lang;document.documentElement.lang=lang;
  document.querySelectorAll('.lang').forEach(b=>b.classList.toggle('active',b.dataset.lang===lang));
- const t=labels[lang];document.getElementById('subtitle').textContent=t.subtitle;document.getElementById('hints').textContent=t.hints;input.placeholder=t.placeholder;send.textContent=t.send;document.getElementById('newchat').textContent=t.newchat;{const b=document.getElementById('loc');b.title=userLoc?t.locOn:t.locOff;b.setAttribute('aria-label',b.title)}
+ const t=labels[lang];document.getElementById('subtitle').textContent=t.subtitle;document.getElementById('hints').textContent=t.hints;input.placeholder=t.placeholder;send.textContent=t.send;document.getElementById('newchat').textContent=t.newchat;document.getElementById('footer').textContent=t.footer;{const b=document.getElementById('loc');b.title=userLoc?t.locOn:t.locOff;b.setAttribute('aria-label',b.title)}
  if(!transcript.length)transcript.push({who:'bot',welcome:true,texts:{}});
- if(changed&&transcript.some(e=>e.who==='bot'&&!e.welcome))translateTranscript(lang);else renderTranscript();
+ const missing=transcript.some(e=>e.who==='bot'&&!e.welcome&&!e.error&&!e.texts[lang]);
+ if((changed||missing)&&!translating&&missing)translateTranscript(lang);else renderTranscript();
 }
 document.querySelectorAll('.lang[data-lang]').forEach(b=>b.addEventListener('click',()=>setLang(b.dataset.lang)));
 document.getElementById('loc').addEventListener('click',()=>{
